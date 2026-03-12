@@ -4587,37 +4587,44 @@ function UI_renderContextActions() {
   // AP recovery preview
   const maxAp   = p.maxAp || 40;
   const restGain = Math.max(1, Math.floor(maxAp * 0.20));
-  const hasEnemy = (tile.objects||[]).some(o => o?.type==='enemy' && o.alive);
+  // hasEnemy: phải dùng OBJECT_DEFS để resolve category vì obj.type là KEY ('zombie'), không phải 'enemy'
+  const _OD = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
+  const hasEnemy = (tile.objects||[]).some(o => {
+    const cat = (_OD[o?.type]?.type) || o?.type;
+    return cat === 'enemy' && o.alive !== false;
+  });
   const restCount = s?.restCount || 0;
 
   (tile.objects || []).forEach((obj, idx) => {
     if (!obj) return;
-    if (obj.type === 'enemy' && obj.alive) {
-      const cost = obj.fightAp || 2;
+    // Resolve category từ OBJECT_DEFS: obj.type là KEY ('zombie','firstaid_kit'...)
+    // def.type là CATEGORY ('enemy','usable','material','container','special','npc')
+    const _def  = _OD[obj.type] || {};
+    const objCat = _def.type || obj.type || 'container';
+
+    if (objCat === 'enemy' && obj.alive !== false) {
+      const cost = _def.fightAp || obj.fightAp || 3;
       const canAfford = p.ap >= cost;
       if (obj.isBoss) {
         btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>☠ BOSS [-${cost}ĐHĐ]</button>`);
       } else {
         btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>⚔ Tấn công [-${cost}ĐHĐ]</button>`);
       }
-    } else if (obj.type === 'enemy' && !obj.alive) {
-      // Dead enemy — can loot
+    } else if (objCat === 'enemy' && obj.alive === false) {
       btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})">💀 Lục xác zombie</button>`);
-    } else if (obj.type === 'container' && !obj.searched) {
-      const cost = obj.searchAp || (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]?.searchAp) || 1;
+    } else if (objCat === 'container' && !obj.searched) {
+      const cost = _def.searchAp || obj.searchAp || 1;
       btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>🔍 Lục soát [-${cost}ĐHĐ]</button>`);
-    } else if (obj.type === 'usable' && !obj.used) {
-      const def = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-      const cost = obj.ap || def.ap || 1;
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>💊 ${obj.label || def.label || 'Dùng'} [-${cost}ĐHĐ]</button>`);
-    } else if (obj.type === 'material' && !obj.used) {
-      const def = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-      const cost = obj.ap || def.ap || 1;
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>🧱 ${obj.label || def.label || 'Nhặt'} [-${cost}ĐHĐ]</button>`);
-    } else if (obj.type === 'npc') {
+    } else if (objCat === 'container' && obj.searched) {
+      btns.push(`<button class="ctx-btn" disabled style="opacity:.4">🔓 Đã lục soát</button>`);
+    } else if ((objCat === 'usable' || objCat === 'material') && !obj.used) {
+      const cost = _def.ap || obj.ap || 1;
+      const icon = objCat === 'usable' ? '💊' : '🧱';
+      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>${icon} ${_def.label || obj.label || obj.type} [-${cost}ĐHĐ]</button>`);
+    } else if (objCat === 'npc') {
       btns.push(`<button class="ctx-btn" onclick="UI_execNPC(${idx})">💬 Nói chuyện</button>`);
-    } else if (obj.type === 'special' && !obj.used) {
-      btns.push(`<button class="ctx-btn" onclick="UI_openObjectPopup(${idx})">🔧 Tương tác</button>`);
+    } else if (objCat === 'special' && !obj.used) {
+      btns.push(`<button class="ctx-btn" onclick="UI_openObjectPopup(${idx})">🔧 ${_def.label || 'Tương tác'}</button>`);
     }
   });
 
@@ -5415,16 +5422,21 @@ function UI_openObjectPopup(objIdx) {
 
   currentPopupObj = { obj, idx: objIdx };
 
-  const def = OBJECT_DEFS[obj.id] || obj;
+  // obj.type là KEY trong OBJECT_DEFS (ví dụ: 'firstaid_kit', 'zombie', 'shelf')
+  // def.type là CATEGORY ('usable','enemy','container','material','special','npc')
+  const _OD2   = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
+  const def    = _OD2[obj.type] || {};
+  const objCat = def.type || obj.type || 'container';
+
   document.getElementById('popup-icon').textContent  = obj.icon || def.icon || '📦';
-  document.getElementById('popup-title').textContent = obj.label || def.label;
+  document.getElementById('popup-title').textContent = obj.label || def.label || obj.type || '???';
   document.getElementById('popup-result').textContent = '';
 
   let meta = '', btns = '', extraHtml = '';
 
-  if (obj.type === 'container') {
-    const isSearched = obj.searched || obj.looted; // support both field names
-    const apCost = obj.searchAp || (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]?.searchAp) || 2;
+  if (objCat === 'container') {
+    const isSearched = obj.searched || obj.looted;
+    const apCost = def.searchAp || obj.searchAp || 2;
     meta = isSearched ? 'Đã lục soát' : `Có thể lục soát · ${apCost} ĐHĐ`;
     btns = `
       <button class="popup-btn" onclick="UI_execSearch(${objIdx},false)" ${isSearched||gs.player.ap<apCost?'disabled':''}>
@@ -5434,7 +5446,7 @@ function UI_openObjectPopup(objIdx) {
         🔎 Lục soát kỹ <span class="pbcost">-${apCost+1} ĐHĐ</span>
       </button>`;
 
-  } else if (obj.type === 'enemy' && obj.alive) {
+  } else if (objCat === 'enemy' && obj.alive !== false) {
     const exits = DW_getExits();
     const fleeDir = exits[0]?.id || 'n';
 
@@ -5520,29 +5532,60 @@ function UI_openObjectPopup(objIdx) {
         🏃 Bỏ chạy (${exits[0]?.label||'?'}) <span class="pbcost">-${Math.max(1,(exits[0]?.cost||2)-1)} ĐHĐ</span>
       </button>`;
     }
-  } else if (obj.type === 'enemy' && !obj.alive) {
+  } else if (objCat === 'enemy' && obj.alive === false) {
     meta = 'Đã bị tiêu diệt';
     btns = '<div style="padding:8px;font-family:var(--mono);font-size:9px;color:var(--dim)">Không còn đe dọa.</div>';
-  } else if (obj.type === 'npc') {
+  } else if (objCat === 'npc') {
     meta = 'Người sống sót · có thể giao tiếp';
     btns = `<button class="popup-btn" onclick="UI_execNPC(${objIdx})">💬 Nói chuyện <span class="pbcost">-1 ĐHĐ</span></button>`;
-  } else if (obj.type === 'special') {
-    meta = 'Vật đặc biệt';
-    btns = `<button class="popup-btn" onclick="UI_execSpecial(${objIdx})">🔧 Sử dụng <span class="pbcost">-${obj.ap||2} ĐHĐ</span></button>`;
-  } else if (obj.type === 'usable') {
-    const uDef = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-    const uCost = obj.ap || uDef.ap || 1;
-    meta = obj.used ? 'Đã dùng' : `Vật phẩm có thể sử dụng · ${uCost} ĐHĐ`;
-    btns = `<button class="popup-btn" onclick="UI_execUsable(${objIdx})" ${obj.used||gs.player.ap<uCost?'disabled':''}>
-      💊 ${obj.label || uDef.label || 'Sử dụng'} <span class="pbcost">-${uCost} ĐHĐ</span>
-    </button>`;
-  } else if (obj.type === 'material') {
-    const mDef = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-    const mCost = obj.ap || mDef.ap || 1;
-    meta = obj.used ? 'Đã nhặt' : `Vật liệu · ${mCost} ĐHĐ để nhặt`;
-    btns = `<button class="popup-btn" onclick="UI_execPickup(${objIdx})" ${obj.used||gs.player.ap<mCost?'disabled':''}>
-      🧱 Nhặt ${obj.label || mDef.label || 'Vật liệu'} <span class="pbcost">-${mCost} ĐHĐ</span>
-    </button>`;
+  } else if (objCat === 'special') {
+    const sCost = def.ap || obj.ap || 2;
+    meta = def.label ? `${def.label} · ${sCost} ĐHĐ` : 'Vật đặc biệt';
+    btns = `<button class="popup-btn" onclick="UI_execSpecial(${objIdx})" ${gs.player.ap<sCost?'disabled':''}>🔧 Sử dụng <span class="pbcost">-${sCost} ĐHĐ</span></button>`;
+  } else if (objCat === 'usable') {
+    // Popup: thông tin vật phẩm + hỏi Lấy / Không
+    const uCost  = def.ap || obj.ap || 1;
+    const uLabel = def.label || obj.label || obj.type;
+    const uDesc  = def.desc  || 'Vật phẩm có thể sử dụng.';
+    meta = obj.used ? 'Đã nhặt' : `Vật phẩm trên sàn · ${uCost} ĐHĐ`;
+    if (obj.used) {
+      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
+    } else {
+      btns = `
+        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${uDesc}</div>
+        <div style="display:flex;gap:8px">
+          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
+            onclick="UI_execPickupItem(${objIdx},'usable')" ${gs.player.ap<uCost?'disabled':''}>
+            ✅ Lấy <span class="pbcost">-${uCost} ĐHĐ</span>
+          </button>
+          <button class="popup-btn" style="flex:1;opacity:.5"
+            onclick="document.getElementById('popup-overlay').classList.remove('show')">
+            ❌ Không
+          </button>
+        </div>`;
+    }
+  } else if (objCat === 'material') {
+    // Popup: thông tin vật liệu + hỏi Lấy / Không
+    const mCost  = def.ap || obj.ap || 1;
+    const mLabel = def.label || obj.label || obj.type;
+    const mDesc  = def.desc  || 'Vật liệu. Dùng để craft hoặc xây barricade.';
+    meta = obj.used ? 'Đã nhặt' : `Vật liệu trên sàn · ${mCost} ĐHĐ`;
+    if (obj.used) {
+      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
+    } else {
+      btns = `
+        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${mDesc}</div>
+        <div style="display:flex;gap:8px">
+          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
+            onclick="UI_execPickupItem(${objIdx},'material')" ${gs.player.ap<mCost?'disabled':''}>
+            ✅ Lấy <span class="pbcost">-${mCost} ĐHĐ</span>
+          </button>
+          <button class="popup-btn" style="flex:1;opacity:.5"
+            onclick="document.getElementById('popup-overlay').classList.remove('show')">
+            ❌ Không
+          </button>
+        </div>`;
+    }
   }
 
   document.getElementById('popup-meta').textContent = meta;
@@ -5706,73 +5749,57 @@ async function UI_execNPC(idx) {
 function UI_execSpecial(idx) {
   const tile = DW_currentTile();
   const obj  = tile?.objects?.[idx];
-  const ap   = obj?.ap || 2;
+  const _ODs = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
+  const def  = _ODs[obj?.type] || {};
+  const ap   = def.ap || obj?.ap || 2;
   DW_tickTime(ap);
-  DW_addLog(`🔧 Sử dụng ${obj?.label||'vật đặc biệt'}.`);
+  DW_addLog(`🔧 Sử dụng ${def.label || obj?.label || 'vật đặc biệt'}.`);
   const rawTile = gs._state?.tiles?.[`${gs._state.x},${gs._state.y}`];
   if (rawTile?.objects?.[idx]) rawTile.objects[idx].used = true;
-  document.getElementById('popup-result').innerHTML = `<span style="color:var(--amber)">Đã sử dụng ${obj?.label||''}.</span>`;
+  document.getElementById('popup-result').innerHTML = `<span style="color:var(--amber)">Đã sử dụng ${def.label||obj?.label||''}.</span>`;
   UI_renderAll();
 }
 
-// Usable items on ground (firstaid_kit, etc.) — pick up into inventory
-function UI_execUsable(idx) {
+// UI_execPickupItem: nhặt vật phẩm/vật liệu trên sàn vào túi đồ
+// Dùng cho cả 'usable' và 'material' category
+function UI_execPickupItem(idx, _cat) {
   const tile = DW_currentTile();
   const obj  = tile?.objects?.[idx];
-  if (!obj) return;
-  const def  = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-  const ap   = obj.ap || def.ap || 1;
+  if (!obj) { showNotif('Không tìm thấy vật phẩm.','danger'); return; }
+
+  const _ODP = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
+  const def  = _ODP[obj.type] || {};
+  const ap   = def.ap || obj.ap || 1;
   const s    = gs._state;
-  if (!s || s.ap < ap) { showNotif(`Cần ${ap} ĐHĐ.`, 'danger'); return; }
+  if (!s) return;
+  if (s.ap < ap) { showNotif(`Cần ${ap} ĐHĐ.`, 'danger'); return; }
 
-  // Map usable object type → item id in ITEM_DB
-  const typeToItemId = { firstaid_kit: 'bandage' };
-  const itemId = obj.itemId || typeToItemId[obj.type] || obj.type;
-
-  let ns = { ...s, ap: s.ap - ap };
-  ns.inventory = [...(ns.inventory || []), itemId];
-  // Mark object used
-  const tileKey = `${s.x},${s.y}`;
-  ns.tiles = {
-    ...ns.tiles,
-    [tileKey]: {
-      ...ns.tiles[tileKey],
-      objects: ns.tiles[tileKey].objects.map((o, i) => i === idx ? { ...o, used: true } : o),
-    }
+  // Map object key → ITEM_DB id (dùng obj.type làm item id nếu có trong ITEM_DB)
+  const keyToItem = {
+    firstaid_kit:  'bandage',
+    barricade_mat: 'wood_plank',
+    fuel_can:      'fuel_canister',
   };
-  ns.log = [`💊 Nhặt ${obj.label || def.label || itemId}.`, ...(ns.log || [])];
-  gs.setState(ns);
-  showNotif(`💊 Nhặt được: ${obj.label || def.label || itemId}`, 'success');
-  document.getElementById('popup-overlay').classList.remove('show');
-  UI_renderAll();
-}
+  const itemId = obj.itemId || keyToItem[obj.type] || obj.type;
+  const itemDef = (typeof ITEM_DB !== 'undefined') ? (ITEM_DB[itemId] || null) : null;
+  const itemName = itemDef?.name || def.label || itemId;
 
-// Material items on ground (barricade_mat, fuel_can) — pick up into inventory
-function UI_execPickup(idx) {
-  const tile = DW_currentTile();
-  const obj  = tile?.objects?.[idx];
-  if (!obj) return;
-  const def  = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-  const ap   = obj.ap || def.ap || 1;
-  const s    = gs._state;
-  if (!s || s.ap < ap) { showNotif(`Cần ${ap} ĐHĐ.`, 'danger'); return; }
-
-  const typeToItemId = { barricade_mat: 'wood_plank', fuel_can: 'fuel_canister' };
-  const itemId = obj.itemId || typeToItemId[obj.type] || obj.type;
-
-  let ns = { ...s, ap: s.ap - ap };
-  ns.inventory = [...(ns.inventory || []), itemId];
   const tileKey = `${s.x},${s.y}`;
-  ns.tiles = {
-    ...ns.tiles,
-    [tileKey]: {
-      ...ns.tiles[tileKey],
-      objects: ns.tiles[tileKey].objects.map((o, i) => i === idx ? { ...o, used: true } : o),
-    }
+  const newObjects = s.tiles[tileKey].objects.map((o, i) =>
+    i === idx ? { ...o, used: true } : o
+  );
+
+  let ns = {
+    ...s,
+    ap: s.ap - ap,
+    inventory:  [...(s.inventory  || []), itemId],
+    itemRarity: [...(s.itemRarity || []), 'common'],
+    tiles: { ...s.tiles, [tileKey]: { ...s.tiles[tileKey], objects: newObjects } },
   };
-  ns.log = [`🧱 Nhặt ${obj.label || def.label || itemId}.`, ...(ns.log || [])];
+  ns.log = [`🧲 Nhặt: ${itemName}.`, ...(ns.log || [])];
+
   gs.setState(ns);
-  showNotif(`🧱 Nhặt được: ${obj.label || def.label || itemId}`, 'success');
+  showNotif(`Nhặt được: ${itemName}`, 'success');
   document.getElementById('popup-overlay').classList.remove('show');
   UI_renderAll();
 }
@@ -6654,7 +6681,10 @@ const _orig_UI_openObjectPopup = UI_openObjectPopup;
 function UI_openObjectPopup(objIdx) {
   const tile = DW_currentTile();
   const obj  = tile?.objects?.[objIdx];
-  if (obj && obj.type === 'enemy' && obj.alive) { UI_openCombat(objIdx); return; }
+  if (obj) {
+    const _cat = ((typeof OBJECT_DEFS!=='undefined') ? OBJECT_DEFS[obj.type]?.type : null) || obj.type;
+    if (_cat === 'enemy' && obj.alive !== false) { UI_openCombat(objIdx); return; }
+  }
   _orig_UI_openObjectPopup(objIdx);
 }
 
