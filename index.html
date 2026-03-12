@@ -799,6 +799,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   padding:8px 13px;cursor:pointer;-webkit-appearance:none;
   transition:all .12s;letter-spacing:.4px;line-height:1;
   white-space:nowrap;position:relative;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
 }
 .ctx-btn::after{
   content:'';position:absolute;bottom:0;left:0;right:0;
@@ -950,6 +951,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   cursor:pointer;position:relative;
   transition:border-color .12s,background .12s;
   min-height:48px;overflow:hidden;
+  touch-action:manipulation;-webkit-tap-highlight-color:rgba(240,192,0,.15);
 }
 .scan-cell:hover{border-color:#3a3a3a;background:#111;}
 .scan-cell.cant-afford{opacity:.35;pointer-events:none;}
@@ -1546,6 +1548,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   padding:13px 16px;cursor:pointer;margin-bottom:5px;
   -webkit-appearance:none;display:flex;justify-content:space-between;align-items:center;
   transition:border-color .1s,background .1s;
+  touch-action:manipulation;-webkit-tap-highlight-color:transparent;
 }
 .popup-btn:hover:not(:disabled){border-color:#444;background:#131313;}
 .popup-btn:disabled{opacity:.25;cursor:not-allowed;}
@@ -3220,9 +3223,15 @@ async function UI_startGame() {
   async function _doStart() {
     localStorage.setItem('dw_tutorial_seen', '1');
     showIntro('Đang tạo thế giới...');
-    await sleep(300);
-    DW_newGame(_name, _job, _attrs);
-    await UI_enter();
+    await sleep(200);
+    try {
+      DW_newGame(_name, _job, _attrs);
+      await UI_enter();
+    } catch(err) {
+      console.error('[DW] _doStart error:', err);
+      hideIntro(); // Đảm bảo loading screen luôn ẩn dù có lỗi
+      showNotif('Lỗi khởi tạo: ' + (err.message || 'unknown'), 'danger');
+    }
   }
 
   if (!localStorage.getItem('dw_tutorial_seen')) {
@@ -3260,9 +3269,12 @@ async function UI_enter() {
   // Start real-time AP regen loop
   UI_startApRegen();
 
-  // AI description for spawn tile
+  // AI description for spawn tile — non-blocking, không block game entry
   const tile = DW_currentTile();
-  if (!tile.desc) await UI_aiDescribeTile(tile);
+  if (!tile.desc) {
+    // Không await — AI chạy nền, game không chờ
+    UI_aiDescribeTile(tile).catch(() => {});
+  }
   UI_renderTilePanel();
 }
 
@@ -5608,17 +5620,84 @@ function UI_closePopup(e) {
 // ── ACTION EXECUTIONS ────────────────────────────────
 function UI_execSearch(idx, deep) {
   const r = DW_search(idx, deep);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
+  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
 
-  const msg = r.items?.length
-    ? `✅ Tìm thấy: ${r.items.join(', ')}`
-    : r.empty ? '🔓 Trống rỗng.' : `❌ ${r.msg}`;
+  // r.found = array of itemIds vừa tìm được (engine đã add vào inventory)
+  const found = r.found || [];
 
-  document.getElementById('popup-result').innerHTML = `<span style="color:${r.items?.length?'var(--green)':'var(--dim)'}">${msg}</span>`;
-  if (r.items?.length) showNotif('Nhặt được: '+r.items.join(', '),'success');
+  if (found.length === 0) {
+    document.getElementById('popup-result').innerHTML =
+      '<span style="color:var(--dim)">🔓 Không tìm thấy gì.</span>';
+    UI_renderAll();
+    return;
+  }
 
-  UI_renderAll();
-  setTimeout(()=> UI_openObjectPopup(idx), 50);
+  // Hiện từng item đã tìm được → player chọn Lấy / Bỏ
+  // Items đã được add vào inventory bởi engine — "Bỏ" = drop item ra khỏi inventory
+  const actEl = document.getElementById('popup-actions');
+  const resEl = document.getElementById('popup-result');
+
+  // Track items player đã quyết định
+  const _kept = new Set();
+  const _dropped = new Set();
+
+  function _renderLootChoices() {
+    const remaining = found.filter((_, i) => !_kept.has(i) && !_dropped.has(i));
+    if (remaining.length === 0) {
+      const keptCount  = _kept.size;
+      const dropCount  = _dropped.size;
+      resEl.innerHTML  = `<span style="color:var(--green)">✅ Lấy ${keptCount} vật phẩm, bỏ ${dropCount}.</span>`;
+      actEl.innerHTML  = '';
+      UI_renderAll();
+      return;
+    }
+
+    let html = '<div style="padding:4px 0 8px;font-size:10px;color:#666;font-family:var(--mono)">// CHỌN VẬT PHẨM //</div>';
+    found.forEach((itemId, i) => {
+      if (_kept.has(i) || _dropped.has(i)) return;
+      const idef  = (typeof ITEM_DB !== 'undefined' && ITEM_DB[itemId]) || {};
+      const icon  = idef.icon  || '📦';
+      const name  = idef.name  || itemId;
+      const desc  = idef.desc  || idef.type || '';
+      const wt    = idef.weight != null ? idef.weight + 'kg' : '';
+      html += `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1a1a1a">
+          <span style="font-size:22px;line-height:1">${icon}</span>
+          <div style="flex:1;min-width:0">
+            <div style="font-family:var(--mono);font-size:12px;color:#e8d5a0">${name}</div>
+            <div style="font-size:10px;color:#666">${desc}${wt?' · '+wt:''}</div>
+          </div>
+          <button class="popup-btn" style="flex:0 0 auto;padding:5px 10px;background:rgba(0,100,40,.2);border-color:#0a5"
+            onclick="(function(){_searchKeep(${i})})()">✅ Lấy</button>
+          <button class="popup-btn" style="flex:0 0 auto;padding:5px 10px;opacity:.6"
+            onclick="(function(){_searchDrop(${i},'${itemId}')})()">✕ Bỏ</button>
+        </div>`;
+    });
+    actEl.innerHTML = html;
+  }
+
+  window._searchKeep = function(i) {
+    _kept.add(i);
+    _renderLootChoices();
+  };
+
+  window._searchDrop = function(i, itemId) {
+    _dropped.add(i);
+    // Remove item from inventory (engine already added it)
+    const s   = gs._state;
+    const inv = [...(s.inventory || [])];
+    const rar = [...(s.itemRarity || [])];
+    // Remove last occurrence of itemId (most recently added)
+    for (let j = inv.length - 1; j >= 0; j--) {
+      if (inv[j] === itemId) { inv.splice(j,1); rar.splice(j,1); break; }
+    }
+    gs.setState({ ...s, inventory: inv, itemRarity: rar });
+    _renderLootChoices();
+  };
+
+  document.getElementById('popup-meta').textContent = `Tìm thấy ${found.length} vật phẩm`;
+  resEl.innerHTML = '';
+  _renderLootChoices();
 }
 
 function UI_execFight(idx, mode='normal') {
@@ -5905,14 +5984,21 @@ async function aiDescribeNewTile() {
 }
 
 async function UI_aiDescribeTile(tile) {
-  // Gọi qua Cloudflare Worker proxy — key được giữ server-side
+  // Timeout 8s để không block game trên mobile kết nối chậm
+  const ctrl  = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
   try {
     const tdef    = TILE_TYPES[tile.type] || {};
-    const zLabel  = tile.zombies===0?'không có zombie':tile.zombies<=2?'ít zombie':tile.zombies<=5?'nhiều zombie':'đầy zombie';
+    const zombies = (tile.objects||[]).filter(o => {
+      const d = (typeof OBJECT_DEFS!=='undefined') ? OBJECT_DEFS[o.type] : null;
+      return d?.type === 'enemy';
+    }).length;
+    const zLabel  = zombies===0?'không có zombie':zombies<=2?'ít zombie':zombies<=5?'nhiều zombie':'đầy zombie';
     const prompt  = `Mô tả 2 câu ngắn về ${tile.name} (${tdef.name}) bỏ hoang trong thảm họa zombie. ${zLabel}. Tiếng Việt. Không đề cập số liệu.`;
 
     const res = await fetch(PROXY_URL, {
       method: 'POST',
+      signal: ctrl.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: MODEL, max_tokens: 120,
@@ -5920,16 +6006,18 @@ async function UI_aiDescribeTile(tile) {
         messages: [{ role: 'user', content: prompt }],
       }),
     });
+    clearTimeout(timer);
     const d    = await res.json();
     const desc = d.content?.[0]?.text?.trim() || 'Nơi này trống vắng và đầy ám khí.';
 
-    // Lưu desc vào raw state — DW_currentTile() trả về copy nên phải ghi thẳng vào gs._state
     const s   = gs._state;
     const key = `${s.x},${s.y}`;
     if (s.tiles?.[key]) s.tiles[key] = { ...s.tiles[key], desc };
-    tile.desc = desc; // cập nhật object hiện tại để render ngay
+    tile.desc = desc;
+    UI_renderTilePanel(); // cập nhật panel sau khi AI xong
     DW_save();
   } catch(e) {
+    clearTimeout(timer);
     tile.desc = 'Không khí nặng nề bao phủ nơi này.';
   }
 }
