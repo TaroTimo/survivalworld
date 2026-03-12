@@ -34,6 +34,7 @@ const _raw = {
   DW_barricade:      DW_barricade,
   DW_upgradeBase:    DW_upgradeBase,
   DW_spendSkillPoint: DW_spendSkillPoint,
+  DW_resolveBaseEvent: DW_resolveBaseEvent,
 };
 
 // ── GLOBAL STATE MANAGER ──────────────────────────────
@@ -51,8 +52,28 @@ var gs = (function () {
   return {
     get _state() { return _state; },
 
-    // gs.player — proxy để đọc stats nhanh
-    get player() { return _state || {}; },
+    // gs.player — proxy trả về state + computed fields cho UI
+    get player() {
+      if (!_state) return {};
+      const s = _state;
+      // Computed: weight / maxWeight
+      const inv    = s.inventory || [];
+      const weight = (typeof DW_invWeight === 'function')
+        ? Math.round(DW_invWeight(inv) * 10) / 10
+        : inv.length * 0.5;
+      const maxWeight = 20 + ((s.skills && s.skills.fitness) || 0) * 2
+                           + (inv.includes('supply_cart') ? 25 : 0);
+      // Computed: xpToNext + xpProgress
+      const curLvl  = s.charLevel || 1;
+      const curXp   = s.charXp    || 0;
+      const nextXp  = (typeof DW_xpForLevel === 'function') ? DW_xpForLevel(curLvl + 1) : 120;
+      const baseXp  = (typeof DW_xpForLevel === 'function') ? DW_xpForLevel(curLvl)     : 0;
+      const xpToNext   = Math.max(0, nextXp - curXp);
+      const xpProgress = nextXp > baseXp ? Math.min(1, (curXp - baseXp) / (nextXp - baseXp)) : 1;
+      // statusEffects — alias cho statuses array
+      const statusEffects = s.statuses || [];
+      return Object.assign({}, s, { weight, maxWeight, xpToNext, xpProgress, statusEffects });
+    },
 
     // gs.time — proxy: day, hour, minute, lightLabel cho UI
     get time() {
@@ -454,6 +475,115 @@ DW_getViewState = function () {
     return null;
   };
 })();
+
+// ══════════════════════════════════════════════════════
+// SHIM EXTENSIONS — functions index.html gọi trực tiếp
+// ══════════════════════════════════════════════════════
+
+// ── DW_getMapViewport(cols, rows) ─────────────────────
+// Trả về grid 2D cells xung quanh player.
+// Mỗi cell: { tile, inBounds, explored, isPlayer, hasBoss, x, y }
+DW_getMapViewport = function (cols, rows) {
+  const s = gs._state;
+  if (!s) return [];
+  const halfC = Math.floor(cols / 2);
+  const halfR = Math.floor(rows / 2);
+  const result = [];
+  for (let row = 0; row < rows; row++) {
+    const rowArr = [];
+    for (let col = 0; col < cols; col++) {
+      const wx = s.x + (col - halfC);
+      const wy = s.y + (row - halfR);
+      const inBounds = wx >= 0 && wy >= 0 && wx < DW_WORLD_SIZE && wy < DW_WORLD_SIZE;
+      const key  = wx + ',' + wy;
+      const tile = inBounds && s.tiles ? (s.tiles[key] || null) : null;
+      const isPlayer   = wx === s.x && wy === s.y;
+      const explored   = inBounds && (s.exploredTiles || []).includes(key);
+      const hasBoss    = !!(s.activeBosses && s.activeBosses[key]);
+      rowArr.push({ x: wx, y: wy, tile, inBounds, explored, isPlayer, hasBoss });
+    }
+    result.push(rowArr);
+  }
+  return result;
+};
+
+// ── DW_getAvailableRecipes() ──────────────────────────
+// Trả về CRAFT_RECIPES với thêm field canCraft + matched
+DW_getAvailableRecipes = function () {
+  const s = gs._state;
+  if (!s) return [];
+  const inv = s.inventory || [];
+  return (typeof CRAFT_RECIPES !== 'undefined' ? CRAFT_RECIPES : []).map(function (r) {
+    // Kiểm tra nguyên liệu
+    const invCopy = inv.slice();
+    const matched = [];
+    for (const ingId of (r.ingredients || [])) {
+      const idx = invCopy.indexOf(ingId);
+      if (idx !== -1) { matched.push(ingId); invCopy.splice(idx, 1); }
+    }
+    const hasIngredients = matched.length === (r.ingredients || []).length;
+    // Kiểm tra skill
+    const hasSkills = Object.entries(r.skillReq || {}).every(function ([sk, lv]) {
+      return ((s.skills || {})[sk] || 0) >= lv;
+    });
+    return Object.assign({}, r, { canCraft: hasIngredients && hasSkills, matched: matched });
+  });
+};
+
+// ── DW_apRegenTick(elapsedMs) ─────────────────────────
+// Gọi từ setInterval — chạy regen AP theo thời gian thực.
+// Trả về số AP đã regen (0 nếu không thay đổi).
+DW_apRegenTick = function (elapsedMs) {
+  const s = gs._state;
+  if (!s) return 0;
+  const apBefore = s.ap || 0;
+  const nowMs    = (s.lastRegenMs || Date.now()) + elapsedMs;
+  const next     = DW_apRegen(s, nowMs);
+  if (!next || next === s) return 0;
+  const gained = (next.ap || 0) - apBefore;
+  if (gained > 0) {
+    // setState silent (không trigger save ngay)
+    gs._state = next; // bypass scheduleSave để tránh spam
+  }
+  return gained > 0 ? gained : 0;
+};
+
+// ── DW_getApRegenSeconds() ────────────────────────────
+// Trả về số giây còn lại đến lần regen AP tiếp theo.
+DW_getApRegenSeconds = function () {
+  const s = gs._state;
+  if (!s || !s.lastRegenMs) return 0;
+  const elapsed    = Date.now() - s.lastRegenMs;
+  const remaining  = AP_REGEN_MS - (elapsed % AP_REGEN_MS);
+  return Math.ceil(remaining / 1000);
+};
+
+// ── DW_addLog(msg) ────────────────────────────────────
+// Thêm message vào log của state hiện tại.
+DW_addLog = function (msg) {
+  const s = gs._state;
+  if (!s) return;
+  gs.setState(Object.assign({}, s, { log: [msg].concat(s.log || []) }));
+};
+
+// ── DW_tickTime(apSpent) ─────────────────────────────
+// Trừ AP và advance thời gian trong game (đồng hồ game).
+// Dùng cho các action không qua engine (NPC event, đặc biệt v.v.)
+DW_tickTime = function (apSpent) {
+  const s = gs._state;
+  if (!s) return;
+  const cost = apSpent || 1;
+  const newAp = Math.max(0, (s.ap || 0) - cost);
+  gs.setState(Object.assign({}, s, { ap: newAp }));
+};
+
+// ── DW_resolveBaseEvent(choiceId) ────────────────────
+// Wrap engine DW_resolveBaseEvent — UI gọi không truyền state
+DW_resolveBaseEvent = function (choiceId) {
+  const s = _S('DW_resolveBaseEvent');
+  if (!s) return { ok: false, msg: 'Không có state.' };
+  return _apply(_raw.DW_resolveBaseEvent(s, choiceId));
+};
 
 // ══════════════════════════════════════════════════════
 console.log('[DW Shim v3] Loaded. gs API ready.');
