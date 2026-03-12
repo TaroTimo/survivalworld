@@ -1,1621 +1,1318 @@
 // ══════════════════════════════════════════════════════
-// DEAD WORLD — deadworld-combat-arena.js
-// Canvas Pixel Art Combat Arena
-//
-// ĐÂY LÀ UI LAYER THUẦN TÚY.
-// Không chứa game logic. Không modify state.
-// Chỉ visualize kết quả từ engine-combat.js.
-//
-// Load SAU deadworld-shim.js (cuối danh sách script).
-// Gọi DWArena.show(state) để mở arena.
-// Gọi DWArena.hide() để đóng.
-//
-// Kiến trúc:
-//   engine-combat.js  ← xử lý tất cả logic
-//   deadworld-combat-arena.js ← render pixel art lên Canvas
-//
-// KHÔNG modify:
-//   - gs (global state)
-//   - DW_fight / DW_flee / bất kỳ engine function nào
-//
+// DEAD WORLD — engine-world.js
+// World generation, tile management, movement, day/night cycle
+// + Rumor System v1: generate, trigger, outcome roll
+// + Noise tick: noiseLvl → zombie migration
+// Dependencies: deadworld-data.js, engine-skills.js
 // ══════════════════════════════════════════════════════
 
-var DWArena = (function () {
-  'use strict';
+// ── AP SYSTEM ─────────────────────────────────────────
+var AP_MAX_BASE    = 40;          // tăng từ 20→40: world map travel cần nhiều AP hơn
+var AP_REGEN_MS    = 2 * 60 * 1000; // 1 AP mỗi 2 phút thực (nhanh hơn để bù pool lớn)
+var AP_MAX_STAMINA = 60;
+var AP_EXHAUSTION_FLOOR = 8;
 
-  // ── CONSTANTS ──────────────────────────────────────
-  var TILE_W  = 32;
-  var TILE_H  = 28;
-  var COLS    = 12;
-  var ROWS    = 7;
-  var CANVAS_W = TILE_W * COLS;
-  var CANVAS_H = TILE_H * ROWS;
+// ── STAMINA SYSTEM (Project Zomboid style) ─────────────
+// STAMINA là pool chiến đấu ngắn hạn, TÁCH BIỆT hoàn toàn với AP.
+//   AP        = ngân sách hành động cả ngày (di chuyển, lục soát, craft)
+//   STAMINA   = sức bền chiến đấu ngắn hạn (tấn công, đỡ đòn)
+//
+// Triết lý:
+//   - Chiến đấu luôn KHẢ THI về mechanics (không bị block bởi hết AP)
+//   - Nguy hiểm đến từ: zombie tấn công lại, sức bền cạn → mất khả năng né
+//   - Hồi rất nhanh (30 giây thực) → burst 5 đòn → nghỉ 30s → burst tiếp
+//   - Stress cao / đói / khát → giảm stamina max (giống AP penalties)
+var STM_MAX_BASE    = 10;          // pool chiến đấu cơ bản
+var STM_REGEN_MS    = 30 * 1000;   // 1 STM mỗi 30 giây thực
+var STM_FLOOR       = 2;           // không bao giờ xuống dưới 2 (vẫn có thể chiến đấu, nhưng yếu)
 
-  // Pixel color palette — post-apocalyptic
-  var PAL = {
-    bg:          '#0a0808',
-    ground:      '#1a1510',
-    ground2:     '#1e1812',
-    wall:        '#2a2018',
-    wall2:       '#352818',
-    crack:       '#110d08',
-    fire:        ['#ff6600','#ff4400','#ff8800','#ffaa00'],
-    smoke:       'rgba(40,30,20,0.4)',
-    player:      '#e8d090',
-    playerShirt: '#4a6080',
-    playerShirt2:'#3a5070',
-    zombie:      '#607050',
-    zombie2:     '#4a5840',
-    zombieEye:   '#cc2200',
-    zombieDark:  '#384530',
-    blood:       '#7a1515',
-    blood2:      '#5a0d0d',
-    hit:         '#ff3300',
-    miss:        '#445566',
-    laser:       '#4488ff',
-    laser2:      '#88bbff',
-    beam_red:    '#ff2200',
-    beam_red2:   '#ff6644',
-    slash:       '#ffffaa',
-    slash2:      '#ffcc44',
-    bullet:      '#ffdd44',
-    ui_bg:       '#0c0a08',
-    ui_border:   '#2a2018',
-    ui_amber:    '#f0c000',
-    ui_red:      '#cc2200',
-    ui_green:    '#44aa44',
-    ui_blue:     '#4488cc',
-    ui_dim:      '#554433',
-    hp_full:     '#cc2200',
-    hp_low:      '#ff4400',
-    boss_glow:   'rgba(200,50,0,0.15)',
-  };
+// DW_staminaMax — tính max stamina từ state
+// Chịu ảnh hưởng của các factor sinh tồn như AP
+function DW_staminaMax(state) {
+  let max = STM_MAX_BASE;
 
-  // ── STATE ──────────────────────────────────────────
-  var _canvas   = null;
-  var _ctx      = null;
-  var _overlay  = null;
-  var _raf      = null;
-  var _tick     = 0;
-  var _visible  = false;
+  // Fitness tăng stamina max (tương tự AP)
+  max += Math.min(3, state.skills?.fitness || 0);
 
-  // Arena internal state (KHÔNG phải gs._state)
-  var _arena = {
-    enemies:    [],   // { id, type, hp, maxHp, x, y, px, py, dead, flash, flashTimer }
-    player:     { px: 0, py: 0, flashTimer: 0, flashColor: '' },
-    effects:    [],   // { type, x, y, life, maxLife, ... }
-    log:        [],   // { text, color, alpha }
-    lastMsg:    '',
-    phase:      'idle', // 'idle' | 'player_attack' | 'enemy_attack' | 'result'
-    boss:       null,   // boss data nếu có
-    pendingCombat: null,
-  };
+  // Soldier: thể lực + chiến đấu = +2 stamina max
+  if (state.job === 'soldier') max += 2;
 
-  // ── DOM SETUP ──────────────────────────────────────
-  function _createDOM() {
-    if (document.getElementById('dwa-overlay')) return;
+  // Nông dân: sức bền lao động = +1 stamina max
+  if (state.job === 'farmer') max += 1;
 
-    // Inject styles
-    var style = document.createElement('style');
-    style.id = 'dwa-styles';
-    style.textContent = [
-      '#dwa-overlay{',
-        'position:fixed;inset:0;z-index:9000;',
-        'background:#000;display:none;flex-direction:column;',
-        'font-family:"Rajdhani",sans-serif;',
-        'user-select:none;-webkit-user-select:none;',
-      '}',
-      '#dwa-overlay.active{display:flex;}',
+  // Penalties sinh tồn — cạn kiệt thể chất
+  const hunger = state.hunger ?? 5;
+  if (hunger < 1)       max -= 3;
+  else if (hunger < 3)  max -= 1;
 
-      // Top HUD — resource bar kiểu hình tham khảo
-      '#dwa-hud{',
-        'flex-shrink:0;height:52px;background:#0c0a08;',
-        'border-bottom:2px solid #2a1a08;',
-        'display:flex;align-items:center;gap:0;overflow:hidden;',
-      '}',
-      '.dwa-hud-block{',
-        'display:flex;flex-direction:column;align-items:center;',
-        'justify-content:center;padding:4px 14px;',
-        'border-right:1px solid #2a1a08;min-width:64px;',
-      '}',
-      '.dwa-hud-icon{font-size:22px;line-height:1;}',
-      '.dwa-hud-val{',
-        'font-family:"Bebas Neue",sans-serif;font-size:18px;',
-        'color:#f0c000;line-height:1;letter-spacing:1px;',
-      '}',
-      '.dwa-hud-lbl{',
-        'font-family:"Share Tech Mono",monospace;font-size:8px;',
-        'color:#554433;letter-spacing:2px;text-transform:uppercase;',
-      '}',
-      '#dwa-hud-title{',
-        'flex:1;text-align:center;',
-        'font-family:"Bebas Neue",sans-serif;font-size:22px;',
-        'letter-spacing:4px;color:#cc2200;',
-      '}',
-      '#dwa-close-btn{',
-        'margin-right:12px;padding:6px 14px;',
-        'background:#1a0a0a;border:1px solid #7a1515;',
-        'color:#cc4444;font-family:"Share Tech Mono",monospace;',
-        'font-size:11px;letter-spacing:2px;cursor:pointer;',
-        'transition:background .15s,color .15s;',
-      '}',
-      '#dwa-close-btn:hover{background:#7a1515;color:#fff;}',
+  const thirst = state.thirst ?? 5;
+  if (thirst < 0.5)     max -= 4;
+  else if (thirst < 2)  max -= 2;
 
-      // Canvas area
-      '#dwa-canvas-wrap{',
-        'flex:1;display:flex;align-items:center;justify-content:center;',
-        'background:#080604;position:relative;overflow:hidden;',
-        'min-height:0;',
-      '}',
-      '#dwa-canvas{',
-        'image-rendering:pixelated;image-rendering:crisp-edges;',
-        'max-width:100%;max-height:100%;',
-      '}',
+  // Stress / trầm cảm — ảnh hưởng phản xạ
+  const stress = state.stress ?? 0;
+  if (stress >= 70) max -= 2;
+  else if (stress >= 50) max -= 1;
 
-      // Scanline CRT effect
-      '#dwa-canvas-wrap::after{',
-        'content:"";position:absolute;inset:0;pointer-events:none;',
-        'background:repeating-linear-gradient(',
-          '0deg,transparent,transparent 2px,',
-          'rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 3px',
-        ');',
-      '}',
+  // Trạng thái bệnh tật
+  if ((state.statuses||[]).includes('infected')) max -= 2;
+  if ((state.statuses||[]).includes('bleed'))    max -= 1;
 
-      // Bottom action panel
-      '#dwa-actions{',
-        'flex-shrink:0;background:#0c0a08;',
-        'border-top:2px solid #2a1a08;',
-        'display:flex;flex-direction:column;gap:0;',
-      '}',
-      '#dwa-log{',
-        'padding:6px 14px;min-height:36px;max-height:52px;',
-        'overflow:hidden;',
-        'font-family:"Share Tech Mono",monospace;font-size:11px;',
-        'color:#a09080;line-height:1.4;',
-        'border-bottom:1px solid #1a1208;',
-      '}',
-      '#dwa-btn-row{',
-        'display:flex;gap:0;padding:8px 10px;',
-      '}',
-      '.dwa-btn{',
-        'flex:1;padding:10px 6px;margin:0 4px;',
-        'background:#110e08;border:1px solid #2a1a08;',
-        'color:#a09060;font-family:"Rajdhani",sans-serif;',
-        'font-size:14px;font-weight:700;letter-spacing:1px;',
-        'cursor:pointer;text-align:center;position:relative;',
-        'transition:all .15s;',
-      '}',
-      '.dwa-btn:hover:not(:disabled){',
-        'background:#1e160a;border-color:#f0c000;color:#f0c000;',
-      '}',
-      '.dwa-btn:disabled{opacity:0.4;cursor:not-allowed;}',
-      '.dwa-btn .dwa-ap{',
-        'display:block;font-size:9px;color:#554433;',
-        'font-family:"Share Tech Mono",monospace;margin-top:2px;',
-      '}',
-      '.dwa-btn-attack{border-color:#7a1515;}',
-      '.dwa-btn-attack:hover:not(:disabled){',
-        'background:#2a0808;border-color:#cc2200;color:#ff4444;',
-      '}',
-      '.dwa-btn-flee{border-color:#1a3050;}',
-      '.dwa-btn-rest{border-color:#1a3a1a;color:#7aaa7a;}',
-      '.dwa-btn-rest:hover:not(:disabled){background:#0a1a0a;border-color:#44cc44;color:#88ff88;}',
-      '.dwa-btn-rest.threat-warning{border-color:#aa6600;color:#ffaa44;animation:pulse-warning 1s infinite;}',
-      '@keyframes pulse-warning{0%,100%{opacity:1}50%{opacity:0.6}}',
-      '.dwa-btn-role{border-color:#3a1a5a;color:#cc88ff;}',
-      '.dwa-btn-role:hover:not(:disabled){background:#1a0a2a;border-color:#9944dd;color:#ee99ff;}',
-      '.dwa-btn-role:disabled{opacity:0.3;cursor:not-allowed;}',
+  return Math.max(STM_FLOOR, max);
+}
 
-      // Enemy cards
-      '#dwa-enemy-list{',
-        'display:flex;gap:8px;padding:6px 10px;',
-        'overflow-x:auto;border-bottom:1px solid #1a1208;',
-        'flex-shrink:0;',
-      '}',
-      '.dwa-enemy-card{',
-        'min-width:80px;padding:6px 8px;',
-        'background:#0f0c08;border:1px solid #2a1a08;',
-        'cursor:pointer;transition:all .15s;flex-shrink:0;',
-      '}',
-      '.dwa-enemy-card.selected{border-color:#f0c000;background:#1a1400;}',
-      '.dwa-enemy-card.dead{opacity:0.3;cursor:not-allowed;border-color:#111;}',
-      '.dwa-enemy-card .ec-icon{font-size:18px;line-height:1;}',
-      '.dwa-enemy-card .ec-name{',
-        'font-size:10px;color:#887766;margin-top:2px;',
-        'font-family:"Share Tech Mono",monospace;',
-      '}',
-      '.dwa-enemy-card .ec-hp{',
-        'font-size:9px;color:#cc2200;margin-top:1px;',
-        'font-family:"Share Tech Mono",monospace;',
-      '}',
-      '.ec-hpbar{height:3px;background:#1a0a0a;margin-top:3px;border-radius:1px;}',
-      '.ec-hpfill{height:100%;background:#cc2200;border-radius:1px;transition:width .3s;}',
-    ].join('');
-    document.head.appendChild(style);
-
-    // Overlay container
-    _overlay = document.createElement('div');
-    _overlay.id = 'dwa-overlay';
-    _overlay.innerHTML = [
-      '<div id="dwa-hud">',
-        '<div class="dwa-hud-block">',
-          '<div class="dwa-hud-icon">❤️</div>',
-          '<div class="dwa-hud-val" id="dwa-hp">--</div>',
-          '<div class="dwa-hud-lbl">HP</div>',
-        '</div>',
-        '<div class="dwa-hud-block">',
-          '<div class="dwa-hud-icon">⚡</div>',
-          '<div class="dwa-hud-val" id="dwa-ap">--</div>',
-          '<div class="dwa-hud-lbl">AP</div>',
-        '</div>',
-        '<div class="dwa-hud-block">',
-          '<div class="dwa-hud-icon">🔫</div>',
-          '<div class="dwa-hud-val" id="dwa-ammo">--</div>',
-          '<div class="dwa-hud-lbl">ĐẠN</div>',
-        '</div>',
-        '<div id="dwa-hud-title">⚔ CHIẾN ĐẤU</div>',
-        '<button id="dwa-close-btn">✕ THOÁT</button>',
-      '</div>',
-
-      '<div id="dwa-canvas-wrap">',
-        '<canvas id="dwa-canvas"></canvas>',
-      '</div>',
-
-      '<div id="dwa-actions">',
-        '<div id="dwa-enemy-list"></div>',
-        '<div id="dwa-log">Chọn kẻ thù để tấn công.</div>',
-        '<div id="dwa-btn-row">',
-          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-fight" disabled>',
-            '⚔ TẤN CÔNG',
-            '<span class="dwa-ap" id="dwa-btn-fight-ap">-3 SB</span>',
-          '</button>',
-          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-heavy" disabled>',
-            '💥 ĐÒN MẠNH',
-            '<span class="dwa-ap">-4 SB +1 ĐHĐ</span>',
-          '</button>',
-          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-stealth" disabled>',
-            '🗡 ÁM SÁT',
-            '<span class="dwa-ap">-3 SB</span>',
-          '</button>',
-          '<button class="dwa-btn dwa-btn-role" id="dwa-btn-role" disabled style="display:none">',
-            '<span id="dwa-btn-role-label">🌟 KỸ NĂNG</span>',
-            '<span class="dwa-ap" id="dwa-btn-role-ap">Skill đặc biệt</span>',
-          '</button>',
-          '<button class="dwa-btn dwa-btn-rest" id="dwa-btn-rest">',
-            '😮‍💨 NGHỈ',
-            '<span class="dwa-ap" id="dwa-btn-rest-lbl">Zombie phản công</span>',
-          '</button>',
-          '<button class="dwa-btn dwa-btn-flee" id="dwa-btn-flee">',
-            '🏃 BỎ CHẠY',
-            '<span class="dwa-ap">-2 ĐHĐ</span>',
-          '</button>',
-        '</div>',
-      '</div>',
-    ].join('');
-    document.body.appendChild(_overlay);
-
-    // Canvas
-    _canvas = document.getElementById('dwa-canvas');
-    _canvas.width  = CANVAS_W;
-    _canvas.height = CANVAS_H;
-    _ctx = _canvas.getContext('2d');
-    _ctx.imageSmoothingEnabled = false;
-
-    // Events
-    document.getElementById('dwa-close-btn').addEventListener('click', hide);
-    document.getElementById('dwa-btn-fight').addEventListener('click', function () {
-      _doAttack('normal');
-    });
-    document.getElementById('dwa-btn-heavy').addEventListener('click', function () {
-      _doAttack('heavy');
-    });
-    document.getElementById('dwa-btn-stealth').addEventListener('click', function () {
-      _doAttack('stealth');
-    });
-    document.getElementById('dwa-btn-rest').addEventListener('click', _doThreatRound);
-    document.getElementById('dwa-btn-flee').addEventListener('click', _doFlee);
-    document.getElementById('dwa-btn-role').addEventListener('click', _doRoleSkill);
+// DW_staminaRegen — hồi stamina theo thời gian thực
+// Tương tự DW_apRegen nhưng chu kỳ cực nhanh (30s thay vì 2 phút)
+function DW_staminaRegen(state, nowMs) {
+  if (!state.lastStmRegenMs) {
+    // Lần đầu: khởi tạo timer mà không regen
+    return { ...state, lastStmRegenMs: nowMs };
   }
+  const elapsed = nowMs - state.lastStmRegenMs;
+  const gained  = Math.floor(elapsed / STM_REGEN_MS);
+  if (gained <= 0) return state;
 
-  // ── PIXEL ART RENDERER ────────────────────────────
-  // Mỗi "pixel block" là TILE_W x TILE_H trên Canvas
+  const maxStm = DW_staminaMax(state);
+  const newStm = Math.min(maxStm, (state.stamina ?? maxStm) + gained);
 
-  // Vẽ 1 ô đất (ground tile)
-  function _drawGround(x, y) {
-    var cx = x * TILE_W;
-    var cy = y * TILE_H;
-    var alt = (x + y) % 2 === 0;
-
-    _ctx.fillStyle = alt ? PAL.ground : PAL.ground2;
-    _ctx.fillRect(cx, cy, TILE_W, TILE_H);
-
-    // Vết nứt ngẫu nhiên dựa vào tọa độ (deterministic)
-    var seed = (x * 31 + y * 17) % 7;
-    if (seed < 2) {
-      _ctx.fillStyle = PAL.crack;
-      _ctx.fillRect(cx + seed * 4 + 6, cy + 8, 1, 6);
-      _ctx.fillRect(cx + seed * 4 + 7, cy + 12, 2, 1);
-    }
-  }
-
-  // Vẽ tường phía sau (row 0 và 1)
-  function _drawWall(x, y) {
-    var cx = x * TILE_W;
-    var cy = y * TILE_H;
-
-    _ctx.fillStyle = (x % 3 === 0) ? PAL.wall2 : PAL.wall;
-    _ctx.fillRect(cx, cy, TILE_W, TILE_H);
-
-    // Gạch pattern
-    var brickRow = Math.floor(cy / 8);
-    var offsetX  = (brickRow % 2 === 0) ? 0 : 12;
-    _ctx.fillStyle = PAL.crack;
-    for (var bx = offsetX; bx < TILE_W; bx += 16) {
-      _ctx.fillRect(cx + bx, cy, 1, TILE_H);
-    }
-    _ctx.fillRect(cx, cy, TILE_W, 1);
-  }
-
-  // Lửa / debris (background decoration)
-  function _drawFire(cx, cy, t) {
-    var phases = PAL.fire;
-    var fi = Math.floor(t / 4) % phases.length;
-    // Thân lửa
-    _ctx.fillStyle = phases[fi];
-    _ctx.fillRect(cx + 10, cy + 14, 4, 8);
-    _ctx.fillRect(cx + 8,  cy + 18, 8, 5);
-    // Lõi trắng
-    _ctx.fillStyle = '#ffeeaa';
-    _ctx.fillRect(cx + 11, cy + 17, 2, 4);
-    // Khói
-    var alpha = 0.2 + 0.15 * Math.sin(t * 0.1);
-    _ctx.fillStyle = 'rgba(60,50,40,' + alpha + ')';
-    _ctx.fillRect(cx + 8, cy + 6, 8, 8);
-  }
-
-  // Vẽ player character (pixel art 16x22)
-  function _drawPlayer(px, py, flashColor) {
-    var cx = Math.round(px);
-    var cy = Math.round(py);
-
-    if (flashColor) {
-      _ctx.fillStyle = flashColor;
-      _ctx.fillRect(cx - 2, cy - 2, 22, 28);
-    }
-
-    // Đầu
-    _ctx.fillStyle = PAL.player;
-    _ctx.fillRect(cx + 4, cy, 10, 10);
-    // Mắt
-    _ctx.fillStyle = '#222';
-    _ctx.fillRect(cx + 6, cy + 3, 2, 2);
-    _ctx.fillRect(cx + 10, cy + 3, 2, 2);
-    // Tóc
-    _ctx.fillStyle = '#443322';
-    _ctx.fillRect(cx + 4, cy, 10, 2);
-    _ctx.fillRect(cx + 4, cy + 2, 2, 2);
-    // Thân
-    _ctx.fillStyle = PAL.playerShirt;
-    _ctx.fillRect(cx + 2, cy + 10, 14, 10);
-    // Bóng tối áo
-    _ctx.fillStyle = PAL.playerShirt2;
-    _ctx.fillRect(cx + 2, cy + 18, 14, 2);
-    // Tay trái
-    _ctx.fillStyle = PAL.player;
-    _ctx.fillRect(cx, cy + 10, 2, 8);
-    // Tay phải
-    _ctx.fillRect(cx + 16, cy + 10, 2, 8);
-    // Chân
-    _ctx.fillStyle = '#2a2030';
-    _ctx.fillRect(cx + 3, cy + 20, 5, 6);
-    _ctx.fillRect(cx + 10, cy + 20, 5, 6);
-    // Giày
-    _ctx.fillStyle = '#1a1015';
-    _ctx.fillRect(cx + 2, cy + 24, 6, 2);
-    _ctx.fillRect(cx + 10, cy + 24, 6, 2);
-  }
-
-  // Vẽ zombie (pixel art 14x22, màu xanh xám)
-  function _drawZombie(px, py, type, t, flash) {
-    var cx = Math.round(px);
-    var cy = Math.round(py);
-
-    if (flash) {
-      _ctx.fillStyle = '#ff4400';
-      _ctx.fillRect(cx - 2, cy - 2, 20, 28);
-    }
-
-    var bodyCol  = type === 'zombie_fast' ? '#506845' : PAL.zombie;
-    var bodyCol2 = type === 'zombie_fast' ? '#3d5034' : PAL.zombie2;
-    var darkCol  = PAL.zombieDark;
-
-    // Đầu zombie — lớn hơn, méo
-    _ctx.fillStyle = bodyCol;
-    _ctx.fillRect(cx + 2, cy, 12, 11);
-    // Vết thương trên đầu
-    _ctx.fillStyle = PAL.blood;
-    _ctx.fillRect(cx + 5, cy, 4, 2);
-    // Mắt đỏ phát sáng
-    _ctx.fillStyle = PAL.zombieEye;
-    _ctx.fillRect(cx + 4, cy + 3, 2, 2);
-    _ctx.fillRect(cx + 10, cy + 3, 2, 2);
-    // Pupil trắng nhỏ (flicker)
-    if (Math.floor(t / 15) % 3 !== 0) {
-      _ctx.fillStyle = '#ffcccc';
-      _ctx.fillRect(cx + 4, cy + 3, 1, 1);
-      _ctx.fillRect(cx + 10, cy + 3, 1, 1);
-    }
-    // Miệng há
-    _ctx.fillStyle = '#1a0808';
-    _ctx.fillRect(cx + 5, cy + 7, 6, 2);
-    _ctx.fillStyle = '#cc1100';
-    _ctx.fillRect(cx + 6, cy + 8, 4, 1);
-
-    // Thân — rách
-    _ctx.fillStyle = bodyCol2;
-    _ctx.fillRect(cx + 1, cy + 11, 14, 10);
-    _ctx.fillStyle = darkCol;
-    _ctx.fillRect(cx + 1, cy + 19, 14, 2);
-    // Rách áo
-    _ctx.fillStyle = bodyCol;
-    _ctx.fillRect(cx + 7, cy + 13, 2, 5);
-    _ctx.fillRect(cx + 4, cy + 15, 2, 3);
-
-    // Tay vươn ra (animation)
-    var armSwing = Math.sin(t * 0.08) * 2;
-    _ctx.fillStyle = bodyCol;
-    _ctx.fillRect(cx - 2, cy + 11 + Math.round(armSwing), 3, 9);
-    _ctx.fillRect(cx + 15, cy + 11 - Math.round(armSwing), 3, 9);
-
-    // Chân
-    _ctx.fillStyle = darkCol;
-    var legL = Math.sin(t * 0.08) > 0 ? 1 : 0;
-    _ctx.fillRect(cx + 2, cy + 21, 4, 5 + legL);
-    _ctx.fillRect(cx + 10, cy + 21, 4, 5 - legL + 1);
-    // Vết máu dưới chân
-    _ctx.fillStyle = PAL.blood2;
-    _ctx.fillRect(cx + 2, cy + 25, 4, 1);
-    _ctx.fillRect(cx + 10, cy + 25, 4, 1);
-  }
-
-  // Vẽ boss (to hơn, màu đậm hơn)
-  function _drawBoss(px, py, bossId, t) {
-    var cx = Math.round(px);
-    var cy = Math.round(py);
-    var scale = 1.6;
-
-    // Glow hào quang đỏ
-    var gAlpha = 0.1 + 0.08 * Math.sin(t * 0.05);
-    _ctx.fillStyle = 'rgba(200,30,0,' + gAlpha + ')';
-    _ctx.fillRect(cx - 8, cy - 4, Math.round(20 * scale) + 16, Math.round(26 * scale) + 8);
-
-    // Thân boss (to hơn zombie thường)
-    _ctx.fillStyle = '#3a2820';
-    _ctx.fillRect(cx, cy, Math.round(20 * scale), Math.round(26 * scale));
-
-    // Đầu
-    _ctx.fillStyle = '#4a3828';
-    _ctx.fillRect(cx + 4, cy, Math.round(14 * scale), Math.round(12 * scale));
-
-    // Mắt boss — 3 mắt
-    _ctx.fillStyle = '#ff2200';
-    _ctx.fillRect(cx + 6,  cy + 4, 3, 3);
-    _ctx.fillRect(cx + 13, cy + 4, 3, 3);
-    _ctx.fillRect(cx + 10, cy + 2, 2, 2); // mắt thứ ba
-    // Flicker
-    if (Math.floor(t / 10) % 2 === 0) {
-      _ctx.fillStyle = '#ff8866';
-      _ctx.fillRect(cx + 6, cy + 4, 1, 1);
-      _ctx.fillRect(cx + 13, cy + 4, 1, 1);
-    }
-
-    // Nanh
-    _ctx.fillStyle = '#ffe0a0';
-    _ctx.fillRect(cx + 8,  cy + 10, 2, 4);
-    _ctx.fillRect(cx + 14, cy + 10, 2, 4);
-
-    // Thân to
-    _ctx.fillStyle = '#382018';
-    _ctx.fillRect(cx + 2, cy + 18, Math.round(18 * scale), 16);
-
-    // Tay khổng lồ
-    var swing = Math.round(Math.sin(t * 0.06) * 3);
-    _ctx.fillStyle = '#2a1810';
-    _ctx.fillRect(cx - 4, cy + 16 + swing, 6, 14);
-    _ctx.fillRect(cx + Math.round(16 * scale), cy + 16 - swing, 6, 14);
-
-    // Nhãn boss
-    _ctx.fillStyle = '#ff4400';
-    _ctx.font = 'bold 7px "Share Tech Mono",monospace';
-    _ctx.textAlign = 'center';
-    _ctx.fillText('BOSS', cx + Math.round(10 * scale), cy - 4);
-  }
-
-  // ── EFFECTS RENDERER ──────────────────────────────
-
-  // Thêm hiệu ứng vào queue
-  function _addEffect(type, x, y, opts) {
-    _arena.effects.push(Object.assign({ type: type, x: x, y: y, life: 0, maxLife: opts.maxLife || 20 }, opts));
-  }
-
-  // Vẽ tất cả hiệu ứng
-  function _drawEffects(t) {
-    var survivors = [];
-    for (var i = 0; i < _arena.effects.length; i++) {
-      var e = _arena.effects[i];
-      e.life++;
-      var progress = e.life / e.maxLife; // 0 → 1
-      var alpha    = 1 - progress;
-
-      if (e.type === 'slash') {
-        // Đường chém — màu vàng/trắng
-        _ctx.save();
-        _ctx.globalAlpha = alpha;
-        _ctx.strokeStyle = progress < 0.3 ? PAL.slash : PAL.slash2;
-        _ctx.lineWidth   = 3 - progress * 2;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x,          e.y + e.len * 0.5);
-        _ctx.lineTo(e.x + e.len,  e.y - e.len * 0.3);
-        _ctx.stroke();
-        // Đường chém thứ hai (echo)
-        _ctx.globalAlpha = alpha * 0.5;
-        _ctx.strokeStyle = '#ffffff';
-        _ctx.lineWidth = 1;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x + 2,       e.y + e.len * 0.5 - 2);
-        _ctx.lineTo(e.x + e.len - 2, e.y - e.len * 0.3 - 2);
-        _ctx.stroke();
-        _ctx.restore();
-
-      } else if (e.type === 'bullet') {
-        // Viên đạn bay
-        var bx = e.x + (e.tx - e.x) * progress;
-        var by = e.y + (e.ty - e.y) * progress;
-        _ctx.save();
-        _ctx.globalAlpha = alpha;
-        _ctx.fillStyle = PAL.bullet;
-        _ctx.fillRect(bx - 3, by - 1, 6, 2);
-        // Đuôi đạn
-        _ctx.fillStyle = '#ffaa00';
-        _ctx.fillRect(bx - 7, by - 1, 5, 2);
-        _ctx.restore();
-
-      } else if (e.type === 'laser') {
-        // Tia laser xanh (firearm high-level)
-        _ctx.save();
-        _ctx.globalAlpha = alpha * 0.9;
-        _ctx.strokeStyle = PAL.laser2;
-        _ctx.lineWidth   = 4;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x, e.y);
-        _ctx.lineTo(e.tx, e.ty);
-        _ctx.stroke();
-        _ctx.strokeStyle = PAL.laser;
-        _ctx.lineWidth = 2;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x, e.y);
-        _ctx.lineTo(e.tx, e.ty);
-        _ctx.stroke();
-        // Đầu laser sáng
-        _ctx.globalAlpha = alpha;
-        _ctx.fillStyle = '#ffffff';
-        _ctx.fillRect(e.tx - 3, e.ty - 3, 6, 6);
-        _ctx.restore();
-
-      } else if (e.type === 'beam_red') {
-        // Tia đỏ boss
-        _ctx.save();
-        _ctx.globalAlpha = alpha * 0.85;
-        _ctx.strokeStyle = PAL.beam_red2;
-        _ctx.lineWidth   = 6;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x, e.y);
-        _ctx.lineTo(e.tx, e.ty);
-        _ctx.stroke();
-        _ctx.strokeStyle = PAL.beam_red;
-        _ctx.lineWidth = 2;
-        _ctx.beginPath();
-        _ctx.moveTo(e.x, e.y);
-        _ctx.lineTo(e.tx, e.ty);
-        _ctx.stroke();
-        _ctx.restore();
-
-      } else if (e.type === 'hit_number') {
-        // Số sát thương nổi lên
-        var ny = e.y - progress * 30;
-        _ctx.save();
-        _ctx.globalAlpha = alpha;
-        _ctx.fillStyle   = e.color || '#ff4400';
-        _ctx.font        = 'bold ' + (e.big ? '14px' : '11px') + ' "Bebas Neue",sans-serif';
-        _ctx.textAlign   = 'center';
-        _ctx.fillText(e.text, e.x, ny);
-        _ctx.restore();
-
-      } else if (e.type === 'explosion') {
-        // Vụ nổ nhỏ — vòng tròn mở rộng
-        var radius = progress * e.maxR;
-        _ctx.save();
-        _ctx.globalAlpha = alpha * 0.7;
-        _ctx.strokeStyle = '#ff6600';
-        _ctx.lineWidth   = 3;
-        _ctx.beginPath();
-        _ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
-        _ctx.stroke();
-        _ctx.globalAlpha = alpha * 0.3;
-        _ctx.fillStyle   = '#ff3300';
-        _ctx.fill();
-        _ctx.restore();
-
-      } else if (e.type === 'blood_splat') {
-        // Máu bắn
-        _ctx.save();
-        _ctx.globalAlpha = alpha * 0.8;
-        for (var bi = 0; bi < e.drops.length; bi++) {
-          var d = e.drops[bi];
-          _ctx.fillStyle = d.dark ? PAL.blood2 : PAL.blood;
-          _ctx.fillRect(
-            e.x + d.dx * progress * e.maxLen,
-            e.y + d.dy * progress * e.maxLen,
-            d.size, d.size
-          );
-        }
-        _ctx.restore();
-
-      } else if (e.type === 'miss_text') {
-        var my = e.y - progress * 20;
-        _ctx.save();
-        _ctx.globalAlpha = alpha;
-        _ctx.fillStyle   = PAL.miss;
-        _ctx.font        = '10px "Share Tech Mono",monospace';
-        _ctx.textAlign   = 'center';
-        _ctx.fillText('MISS', e.x, my);
-        _ctx.restore();
-
-      } else if (e.type === 'player_dmg_text') {
-        // Số sát thương player nhận — màu đỏ bay lên
-        var py2 = e.y - progress * 24;
-        _ctx.save();
-        _ctx.globalAlpha = alpha;
-        _ctx.fillStyle   = '#ff3333';
-        _ctx.font        = 'bold 12px "Share Tech Mono",monospace';
-        _ctx.textAlign   = 'center';
-        _ctx.fillText('-' + (e.dmg || '?'), e.x, py2);
-        _ctx.restore();
-      }
-
-      if (e.life < e.maxLife) survivors.push(e);
-    }
-    _arena.effects = survivors;
-  }
-
-  // ── MAIN RENDER LOOP ──────────────────────────────
-  function _render() {
-    if (!_visible) return;
-    _tick++;
-    _ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-
-    // 1) Background — tường + sàn
-    for (var gy = 0; gy < ROWS; gy++) {
-      for (var gx = 0; gx < COLS; gx++) {
-        if (gy < 2) _drawWall(gx, gy);
-        else        _drawGround(gx, gy);
-      }
-    }
-
-    // 2) Decoration — xe cháy, lửa background
-    _ctx.save();
-    // Xe phế liệu bên trái
-    _ctx.fillStyle = '#2a2018';
-    _ctx.fillRect(0, TILE_H * 2, TILE_W * 2, TILE_H * 1.5);
-    _ctx.fillStyle = '#1a1410';
-    _ctx.fillRect(2, TILE_H * 2 + 4, TILE_W * 2 - 4, TILE_H * 1.5 - 8);
-    // Bánh xe
-    _ctx.fillStyle = '#111';
-    _ctx.fillRect(2,          TILE_H * 3 + 4, 8, 8);
-    _ctx.fillRect(TILE_W * 2 - 10, TILE_H * 3 + 4, 8, 8);
-    // Lửa trên xe
-    _drawFire(TILE_W - 4, TILE_H * 2, _tick);
-    _ctx.restore();
-
-    // Thùng phuy bên phải
-    _ctx.fillStyle = '#2a2020';
-    _ctx.fillRect(CANVAS_W - TILE_W - 4, TILE_H * 2 + 4, TILE_W - 4, TILE_H * 1.5);
-    _ctx.fillStyle = '#1a1414';
-    _ctx.fillRect(CANVAS_W - TILE_W,     TILE_H * 2 + 8, TILE_W - 10, 4);
-    _drawFire(CANVAS_W - TILE_W * 2 + 4, TILE_H * 2 + 4, _tick + 8);
-
-    // Barricade / pallets background
-    _ctx.fillStyle = '#2a1a0a';
-    _ctx.fillRect(TILE_W * 4, TILE_H * 2, TILE_W * 4, 8);
-    _ctx.fillStyle = '#1e1206';
-    for (var pi = 0; pi < 4; pi++) {
-      _ctx.fillRect(TILE_W * 4 + pi * TILE_W + 2, TILE_H * 2 + 2, TILE_W - 6, 3);
-    }
-
-    // 3) Enemies
-    for (var ei = 0; ei < _arena.enemies.length; ei++) {
-      var enemy = _arena.enemies[ei];
-      if (enemy.dead) continue;
-
-      // HP bar trên đầu
-      var hpRatio = Math.max(0, enemy.hp / enemy.maxHp);
-      var barW = TILE_W - 4;
-      _ctx.fillStyle = '#1a0808';
-      _ctx.fillRect(enemy.px + 2, enemy.py - 6, barW, 3);
-      var hpColor = hpRatio > 0.5 ? PAL.hp_full : PAL.hp_low;
-      _ctx.fillStyle = hpColor;
-      _ctx.fillRect(enemy.px + 2, enemy.py - 6, Math.round(barW * hpRatio), 3);
-
-      // Vẽ enemy sprite
-      var flashColor = (enemy.flashTimer > 0) ? PAL.hit : null;
-      if (enemy.flashTimer > 0) enemy.flashTimer--;
-
-      if (enemy.isBoss) {
-        _drawBoss(enemy.px, enemy.py, enemy.type, _tick);
-      } else {
-        _drawZombie(enemy.px, enemy.py, enemy.type, _tick + ei * 7, flashColor !== null);
-      }
-
-      // Số thứ tự nhỏ
-      _ctx.fillStyle = enemy.selected ? PAL.ui_amber : PAL.ui_dim;
-      _ctx.font = '8px "Share Tech Mono",monospace';
-      _ctx.textAlign = 'center';
-      _ctx.fillText(String(ei + 1), enemy.px + 9, enemy.py + 30);
-    }
-
-    // 4) Player
-    var pFlash = (_arena.player.flashTimer > 0) ? _arena.player.flashColor : null;
-    if (_arena.player.flashTimer > 0) _arena.player.flashTimer--;
-    _drawPlayer(_arena.player.px, _arena.player.py, pFlash);
-
-    // 5) Effects (trên mọi thứ)
-    _drawEffects(_tick);
-
-    // 6) Vignette overlay
-    var vGrad = _ctx.createRadialGradient(
-      CANVAS_W * 0.5, CANVAS_H * 0.5, CANVAS_H * 0.2,
-      CANVAS_W * 0.5, CANVAS_H * 0.5, CANVAS_H * 0.9
-    );
-    vGrad.addColorStop(0, 'rgba(0,0,0,0)');
-    vGrad.addColorStop(1, 'rgba(0,0,0,0.45)');
-    _ctx.fillStyle = vGrad;
-    _ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-
-    _raf = requestAnimationFrame(_render);
-  }
-
-  // ── LAYOUT HELPERS ────────────────────────────────
-
-  // Tính vị trí pixel của mỗi enemy theo layout
-  function _enemyPixelPos(index, total) {
-    // Dàn enemy phía trên, player ở dưới giữa
-    var spread = Math.min(total, 6);
-    var startX = Math.floor((COLS - spread) / 2);
-    var col    = startX + (index % spread);
-    var row    = 2 + Math.floor(index / spread);
-    return {
-      px: col * TILE_W + 4,
-      py: row * TILE_H + 2,
-    };
-  }
-
-  function _playerPixelPos() {
-    return {
-      px: Math.floor(COLS / 2) * TILE_W - 8,
-      py: (ROWS - 2) * TILE_H,
-    };
-  }
-
-  // ── COMBAT HELPERS ────────────────────────────────
-
-  // Spawn blood effect
-  function _spawnBlood(targetPx, targetPy, dmg) {
-    var drops = [];
-    for (var i = 0; i < 8; i++) {
-      drops.push({
-        dx: (Math.random() - 0.5) * 2,
-        dy: (Math.random() - 0.5) * 2,
-        size: Math.random() < 0.3 ? 3 : 2,
-        dark: Math.random() < 0.4,
-      });
-    }
-    _addEffect('blood_splat', targetPx + 8, targetPy + 12, {
-      maxLife: 35, drops: drops, maxLen: 20,
-    });
-    _addEffect('explosion', targetPx + 8, targetPy + 12, {
-      maxLife: 12, maxR: 14,
-    });
-    _addEffect('hit_number', targetPx + 8, targetPy, {
-      maxLife: 30, text: '-' + dmg, color: '#ff4400',
-      big: dmg >= 5,
-    });
-  }
-
-  // Spawn projectile effect: player → target enemy
-  function _spawnProjectile(type, fromPx, fromPy, toPx, toPy) {
-    var sx = fromPx + 8;
-    var sy = fromPy + 10;
-    var tx = toPx + 8;
-    var ty = toPy + 12;
-
-    if (type === 'slash') {
-      _addEffect('slash', sx, sy, { maxLife: 18, len: 28 });
-    } else if (type === 'laser') {
-      _addEffect('laser', sx, sy, { maxLife: 15, tx: tx, ty: ty });
-    } else if (type === 'beam_red') {
-      _addEffect('beam_red', toPx + 8, toPy + 6, {
-        maxLife: 18, tx: fromPx + 8, ty: fromPy + 8,
-      });
-    } else {
-      _addEffect('bullet', sx, sy, { maxLife: 12, tx: tx, ty: ty });
-    }
-  }
-
-  // Xác định loại projectile dựa vào weapon
-  function _getProjectileType(state) {
-    var wid = state.equip && state.equip.weapon;
-    if (!wid) return 'slash';
-    if (typeof ITEM_DB !== 'undefined' && ITEM_DB[wid]) {
-      var def = ITEM_DB[wid];
-      if (def.tags && def.tags.indexOf('blade') >= 0) return 'slash';
-      if (def.tags && def.tags.indexOf('firearm') >= 0) {
-        // skill cao → laser visual
-        var skillLv = (state.skills && state.skills.firearm) || 0;
-        return skillLv >= 3 ? 'laser' : 'bullet';
-      }
-      if (def.tags && def.tags.indexOf('blunt') >= 0) return 'slash';
-    }
-    return 'slash';
-  }
-
-  // ── PUBLIC API ────────────────────────────────────
-
-  // Cập nhật HUD từ state
-  function _updateHUD(state) {
-    var hp   = document.getElementById('dwa-hp');
-    var ap   = document.getElementById('dwa-ap');
-    var ammo = document.getElementById('dwa-ammo');
-    if (hp)   hp.textContent   = (state.hp || 0) + '/' + (state.maxHp || 0);
-    // Hiển thị STAMINA thay AP trong arena (AP vẫn hiển thị nhỏ hơn)
-    var maxStmHud = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state.maxStamina || 10);
-    var curStmHud = state.stamina != null ? state.stamina : maxStmHud;
-    if (ap) ap.textContent = curStmHud + '/' + maxStmHud + ' SB';
-
-    // Đạn
-    var wid  = state.equip && state.equip.weapon;
-    var ammoStr = '∞';
-    if (wid && typeof ITEM_DB !== 'undefined' && ITEM_DB[wid]) {
-      var wdef = ITEM_DB[wid];
-      if (wdef.ammoType && state.ammo) {
-        ammoStr = (state.ammo[wdef.ammoType] || 0) + '';
-      }
-    }
-    if (ammo) ammo.textContent = ammoStr;
-  }
-
-  // Render danh sách enemy cards + chọn target
-  var _selectedEnemyObjId = null;
-
-  function _renderEnemyList(enemies) {
-    var list = document.getElementById('dwa-enemy-list');
-    if (!list) return;
-    list.innerHTML = '';
-
-    for (var i = 0; i < enemies.length; i++) {
-      (function (idx, en) {
-        var typeDef = (typeof OBJECT_DEFS !== 'undefined') ? (OBJECT_DEFS[en.type] || {}) : {};
-        var icon    = en.isBoss ? '☠️' : (typeDef.icon || '🧟');
-        var name    = en.isBoss ? (en.bossName || 'BOSS') : (typeDef.label || en.type);
-        var hp      = en.hp;
-        var maxHp   = en.maxHp;
-        var hpPct   = Math.max(0, Math.round(hp / maxHp * 100));
-
-        var card = document.createElement('div');
-        card.className = 'dwa-enemy-card' +
-          (en.id === _selectedEnemyObjId ? ' selected' : '') +
-          (hp <= 0 ? ' dead' : '');
-        card.innerHTML =
-          '<div class="ec-icon">' + icon + '</div>' +
-          '<div class="ec-name">' + name + '</div>' +
-          '<div class="ec-hp">' + hp + '/' + maxHp + '</div>' +
-          '<div class="ec-hpbar"><div class="ec-hpfill" style="width:' + hpPct + '%"></div></div>';
-
-        if (hp > 0) {
-          card.addEventListener('click', function () {
-            _selectedEnemyObjId = en.id;
-            _renderEnemyList(_arena.enemies);
-            _arena.enemies.forEach(function (e) { e.selected = (e.id === en.id); });
-            _updateButtons();
-          });
-        }
-        list.appendChild(card);
-      })(i, _arena.enemies[i]);
-    }
-  }
-
-  // Helper: select enemy by id and update UI
-  function _selectEnemy(id) {
-    _selectedEnemyObjId = id;
-    _arena.enemies.forEach(function (e) { e.selected = (e.id === id); });
-    _renderEnemyList(_arena.enemies);
-    _updateButtons();
-  }
-
-  function _updateButtons() {
-    var state  = gs && gs._state;
-    var ap     = state ? (state.ap || 0) : 0;
-    var maxStm = (state && typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state?.maxStamina || 10);
-    var stm    = state ? (state.stamina ?? maxStm) : 0;
-    var pressure = state ? (state.threatPressure || 0) : 0;
-
-    // Kiểm tra target hợp lệ
-    var hasTarget = false;
-    if (_selectedEnemyObjId) {
-      for (var i = 0; i < _arena.enemies.length; i++) {
-        var en = _arena.enemies[i];
-        if (en.id === _selectedEnemyObjId && !en.dead && en.hp > 0) {
-          hasTarget = true;
-          break;
-        }
-      }
-      if (!hasTarget) _selectedEnemyObjId = null;
-    }
-
-    var hasLiveEnemy = _arena.enemies.some(function(e) { return !e.dead && e.hp > 0; });
-
-    var btnFight   = document.getElementById('dwa-btn-fight');
-    var btnHeavy   = document.getElementById('dwa-btn-heavy');
-    var btnStealth = document.getElementById('dwa-btn-stealth');
-    var btnRest    = document.getElementById('dwa-btn-rest');
-    var btnFlee    = document.getElementById('dwa-btn-flee');
-    var btnRole    = document.getElementById('dwa-btn-role');
-
-    if (btnFight)   btnFight.disabled   = !hasTarget || stm < 3;
-    if (btnHeavy)   btnHeavy.disabled   = !hasTarget || stm < 4 || ap < 1;
-    if (btnStealth) btnStealth.disabled = !hasTarget || stm < 3;
-    if (btnFlee)    btnFlee.disabled    = ap < 2;
-
-    // Nút Nghỉ: luôn available khi còn enemy (đây là mục đích cốt lõi)
-    // Khi không có enemy → vẫn available để hồi STM an toàn
-    if (btnRest) {
-      btnRest.disabled = false;
-      var restLbl = document.getElementById('dwa-btn-rest-lbl');
-      if (hasLiveEnemy) {
-        if (pressure >= 3) {
-          btnRest.className = 'dwa-btn dwa-btn-rest threat-warning';
-          if (restLbl) restLbl.textContent = '⚠ ' + _arena.enemies.filter(function(e){return !e.dead&&e.hp>0;}).length + ' zombie phản công!';
-        } else {
-          btnRest.className = 'dwa-btn dwa-btn-rest';
-          if (restLbl) restLbl.textContent = 'Zombie phản công';
-        }
-      } else {
-        btnRest.className = 'dwa-btn dwa-btn-rest';
-        if (restLbl) restLbl.textContent = 'Hồi SB an toàn';
-      }
-    }
-
-    // AP label cho fight
-    var fightApLbl = document.getElementById('dwa-btn-fight-ap');
-    if (fightApLbl) fightApLbl.textContent = stm < 3 ? 'Hết SB' : '-3 SB';
-
-    // ── Role Skill Button ──────────────────────────────
-    // Hiện/ẩn và enable/disable dựa theo job + skill unlocked
-    if (btnRole && state) {
-      var skillInfo = _getRoleSkillInfo(state);
-      if (skillInfo) {
-        btnRole.style.display = '';
-        var roleLbl = document.getElementById('dwa-btn-role-label');
-        var roleAp  = document.getElementById('dwa-btn-role-ap');
-        if (roleLbl) roleLbl.textContent = skillInfo.icon + ' ' + skillInfo.label;
-        if (roleAp)  roleAp.textContent  = skillInfo.cost;
-        btnRole.disabled = skillInfo.disabled(state, stm, ap);
-        btnRole.title = skillInfo.desc;
-      } else {
-        btnRole.style.display = 'none';
-      }
-    }
-  }
-
-  // ── Role Skill Info ───────────────────────────────────
-  // Trả về thông tin skill đặc biệt của role trong combat
-  // Chỉ hiện khi skill đã được unlock (level >= 1)
-  function _getRoleSkillInfo(state) {
-    var job = state.job;
-    var sk  = state.skills || {};
-    var get = (typeof DW_getSkillEffect === 'function') ? DW_getSkillEffect : function(){ return 0; };
-
-    if (job === 'nurse') {
-      // Nurse: Sơ cứu chiến trường — dùng bandage ngay trong combat
-      var hasFirstaid = (sk.firstaid || 0) >= 1;
-      var hasBandage  = (state.inventory || []).indexOf('bandage') !== -1
-                     || (state.inventory || []).indexOf('cloth_bandage') !== -1;
-      if (!hasFirstaid) return null;
-      var heal = get(state, 'so_cuu_cap_toc', 'field_ap_reduce') ? 1 : 2;
-      return {
-        icon: '🩹', label: 'SƠ CỨU',
-        cost: '-' + heal + ' ĐHĐ + Băng',
-        desc: 'Dùng băng hồi HP. Cần Băng gạc trong túi.',
-        disabled: function(s, stm, ap) {
-          var inv = s.inventory || [];
-          return ap < heal || (inv.indexOf('bandage') === -1 && inv.indexOf('cloth_bandage') === -1);
-        },
-      };
-    }
-
-    if (job === 'soldier') {
-      // Soldier: Counter-attack nếu unlock
-      var hasCounter = get(state, 'phan_cong_chop_nhoang', 'counter_attack_unlock');
-      if (!hasCounter) return null;
-      var usedCount = state.combatCounterUsed || 0;
-      var maxUses   = get(state, 'phan_cong_chop_nhoang', 'counter_uses_per_combat') || 1;
-      return {
-        icon: '⚡', label: 'PHẢN CÔNG',
-        cost: 'Tự động (+' + Math.round((get(state,'phan_cong_chop_nhoang','counter_damage_bonus')||0.15)*100) + '% DMG)',
-        desc: 'Phản công ngay lập tức sau khi bị đánh. Hồi phục thụ động.',
-        disabled: function(s, stm, ap) { return usedCount >= maxUses || stm < 2; },
-      };
-    }
-
-    if (job === 'police') {
-      // Police: Cảnh báo — làm zombie hoảng loạn (reduce threat pressure)
-      var hasWarning = (sk.mental || 0) >= 1;
-      if (!hasWarning) return null;
-      return {
-        icon: '🚨', label: 'CẢNH BÁO',
-        cost: '-1 ĐHĐ',
-        desc: 'Hét lên cảnh báo — giảm Threat Pressure về 0, zombie hoảng loạn 1 lượt.',
-        disabled: function(s, stm, ap) { return ap < 1 || (s.policeWarnUsed || false); },
-      };
-    }
-
-    if (job === 'mechanic') {
-      // Mechanic: Sửa chữa vũ khí nhanh trong combat
-      var hasMechSkill = (sk.craft || 0) >= 1;
-      if (!hasMechSkill) return null;
-      return {
-        icon: '🔧', label: 'SỬA ĐỒ',
-        cost: '-1 ĐHĐ',
-        desc: 'Sửa vũ khí đang cầm: hồi 5 độ bền. Dùng 1 lần/combat.',
-        disabled: function(s, stm, ap) { return ap < 1 || (s.mechRepairUsed || false); },
-      };
-    }
-
-    if (job === 'driver') {
-      // Driver: Thoát nhanh — giảm AP bỏ chạy
-      var hasEscape = (sk.sneak || 0) >= 1;
-      if (!hasEscape) return null;
-      return {
-        icon: '💨', label: 'BỎ TRỐN',
-        cost: '-1 ĐHĐ',
-        desc: 'Driver chạy nhanh — thoát khỏi combat chỉ tốn 1 ĐHĐ thay vì 2.',
-        disabled: function(s, stm, ap) { return ap < 1; },
-      };
-    }
-
-    return null; // Các role khác: không có skill combat đặc biệt hiện tại
-  }
-
-  // ── Role Skill Action ─────────────────────────────────
-  function _doRoleSkill() {
-    var state = gs && gs._state;
-    if (!state) return;
-    var job = state.job;
-
-    if (job === 'nurse') {
-      // Dùng bandage để hồi HP trong combat
-      var inv = state.inventory ? state.inventory.slice() : [];
-      var bidx = inv.indexOf('bandage');
-      if (bidx === -1) bidx = inv.indexOf('cloth_bandage');
-      if (bidx === -1) { _showLog('🩹 Không có băng gạc!', '#cc4400'); return; }
-      var get2 = (typeof DW_getSkillEffect === 'function') ? DW_getSkillEffect : function(){return 0;};
-      var heal = get2(state, 'so_cuu_cap_toc', 'field_ap_reduce') ? 1 : 2;
-      if (state.ap < heal) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
-      var healAmt = 3 + (get2(state,'so_cuu_cap_toc','field_med_bonus')||0);
-      inv.splice(bidx, 1);
-      var ns = {
-        ...state,
-        ap: state.ap - heal,
-        hp: Math.min(state.maxHp, state.hp + healAmt),
-        inventory: inv,
-      };
-      ns.log = ['🩹 Sơ cứu chiến trường: +' + healAmt + ' HP.', ...(ns.log||[])];
-      gs.setState(ns);
-      _showLog('🩹 Băng bó: +' + healAmt + ' HP!', '#44dd44');
-      _updateHUD();
-      _updateButtons();
-      return;
-    }
-
-    if (job === 'police') {
-      // Cảnh báo: reset threat pressure
-      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
-      if (state.policeWarnUsed) { _showLog('🚨 Đã dùng trong combat này!', '#cc4400'); return; }
-      var ns2 = { ...state, ap: state.ap - 1, threatPressure: 0, policeWarnUsed: true };
-      ns2.log = ['🚨 Cảnh sát hét cảnh báo — zombie hoảng loạn!', ...(ns2.log||[])];
-      gs.setState(ns2);
-      _showLog('🚨 Zombie hoảng loạn! Threat Pressure → 0', '#ffaa44');
-      _updateHUD();
-      _updateButtons();
-      return;
-    }
-
-    if (job === 'mechanic') {
-      // Sửa vũ khí trong combat
-      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
-      if (state.mechRepairUsed) { _showLog('🔧 Đã dùng trong combat này!', '#cc4400'); return; }
-      var wpSlot = state.equip?.weapon;
-      if (!wpSlot) { _showLog('🔧 Không có vũ khí để sửa!', '#cc4400'); return; }
-      var newDur = { ...(state.equipDur || {}) };
-      var itemDef = (typeof ITEM_DB !== 'undefined') ? ITEM_DB[wpSlot] : null;
-      var maxDur = itemDef?.durability || 30;
-      newDur.weapon = Math.min(maxDur, (newDur.weapon ?? maxDur) + 5);
-      var ns3 = { ...state, ap: state.ap - 1, equipDur: newDur, mechRepairUsed: true };
-      ns3.log = ['🔧 Sửa chữa nhanh: vũ khí +5 độ bền.', ...(ns3.log||[])];
-      gs.setState(ns3);
-      _showLog('🔧 Vũ khí +5 độ bền!', '#aaddff');
-      _updateHUD();
-      _updateButtons();
-      return;
-    }
-
-    if (job === 'driver') {
-      // Thoát nhanh với 1 ĐHĐ
-      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
-      // Override flee cost: pass 1 instead of default 2
-      var rawFlee = (typeof _raw !== 'undefined' && _raw.DW_flee) ? _raw.DW_flee
-                  : (typeof window.DW_fleeRaw === 'function') ? window.DW_fleeRaw : null;
-      if (!rawFlee) { _showLog('⚠ Engine unavailable', '#cc2200'); return; }
-      var exits = (typeof DW_getExits === 'function') ? DW_getExits() : [];
-      var dir = exits[0]?.id || 'n';
-      // Spend 1 AP manually + call flee
-      var preState = { ...state, ap: state.ap + 1 }; // add 1 so flee's -2 = net -1
-      var fr = rawFlee(preState, dir);
-      if (fr.ok) {
-        gs.setState(fr.state);
-        _showLog('💨 Driver thoát nhanh!', '#aaffaa');
-        hide();
-      } else {
-        _showLog(fr.msg || 'Thoát thất bại.', '#cc4400');
-      }
-      return;
-    }
-  }
-
-  // Hiển thị log message
-  function _showLog(msg, color) {
-    var logEl = document.getElementById('dwa-log');
-    if (logEl) {
-      logEl.style.color = color || '#a09080';
-      logEl.textContent = msg;
-    }
-    _arena.lastMsg = msg;
-  }
-
-  // Xử lý tấn công — gọi engine, lấy kết quả, play animation
-  function _doAttack(mode) {
-    var state = gs && gs._state;
-    if (!state || !_selectedEnemyObjId) return;
-    if (_arena.phase !== 'idle') return;
-
-    _arena.phase = 'player_attack';
-
-    // Tìm enemy trong arena để lấy vị trí pixel
-    var targetArena = null;
-    for (var i = 0; i < _arena.enemies.length; i++) {
-      if (_arena.enemies[i].id === _selectedEnemyObjId) {
-        targetArena = _arena.enemies[i];
-        break;
-      }
-    }
-
-    // ── GỌI ENGINE ────────────────────────────────────
-    var opts = {};
-    if (mode === 'heavy')   opts.heavy   = true;
-    if (mode === 'stealth') opts.stealth = true;
-
-    var rawFn = (typeof _raw !== 'undefined' && _raw.DW_fight) ? _raw.DW_fight
-              : (typeof window.DW_fightRaw === 'function') ? window.DW_fightRaw
-              : null;
-    if (!rawFn) { _showLog('⚠ Engine combat unavailable', '#cc2200'); _arena.phase='idle'; return; }
-
-    var result = rawFn(state, _selectedEnemyObjId, opts);
-
-    // Engine trả về: { ok, hit, enemyDead, dmg, enemyHp, enemyMaxHp, dmgTaken, state }
-    // Nếu không đủ STM/AP: ok=false — gợi ý nút Nghỉ
-    if (!result.ok) {
-      var exhaustMsg = result.staminaExhausted
-        ? '😮‍💨 Hết sức bền! Nhấn [NGHỈ] để hồi SB — zombie sẽ phản công.'
-        : (result.msg || 'Không đủ ĐHĐ!');
-      _showLog(exhaustMsg, '#cc8800');
-      _arena.phase = 'idle';
-      _updateButtons();
-      return;
-    }
-
-    // Cập nhật global state ngay lập tức
-    if (result.state) gs.setState(result.state);
-
-    // ── ĐỌC KẾT QUẢ TRỰC TIẾP TỪ ENGINE ─────────────
-    // KHÔNG parse log text — dùng structured fields từ engine
-    var isHit      = result.hit === true;       // engine set rõ ràng
-    var enemyDead  = result.enemyDead === true;
-    var dmgOut     = result.dmg      || 0;      // sát thương gây cho zombie
-    var dmgTaken   = result.dmgTaken || 0;      // sát thương player nhận (khi miss)
-    var newEnemyHp = result.enemyHp;            // HP zombie sau khi bị thương (undefined nếu chết)
-    var newLog     = (result.state && result.state.log && result.state.log[0]) || result.msg || '';
-
-    // ── ANIMATION PLAYER → ENEMY ──────────────────────
-    var projType = _getProjectileType(state);
-    var pPos     = _playerPixelPos();
-    if (targetArena) {
-      _spawnProjectile(projType, pPos.px, pPos.py, targetArena.px, targetArena.py);
-    }
-
-    setTimeout(function () {
-
-      if (isHit && targetArena) {
-        // ── HIT: zombie bị trúng ───────────────────────
-        _spawnBlood(targetArena.px, targetArena.py, Math.max(1, Math.round(dmgOut)));
-        targetArena.flashTimer  = 14;
-        targetArena.flashColor  = '#cc2200';
-
-        if (enemyDead) {
-          // Zombie chết
-          targetArena.hp   = 0;
-          targetArena.dead = true;
-          _addEffect('explosion', targetArena.px + 8, targetArena.py + 12, {
-            maxLife: 20, maxR: 22,
-          });
-        } else {
-          // Zombie bị thương — dùng result.enemyHp trực tiếp, KHÔNG tìm trong tile
-          // result.enemyHp là giá trị chính xác engine vừa tính
-          targetArena.hp    = (newEnemyHp !== undefined) ? newEnemyHp : Math.max(0, targetArena.hp - dmgOut);
-          targetArena.maxHp = result.enemyMaxHp || targetArena.maxHp;
-
-          // Zombie phản công nhỏ (animation lunge về phía player) nhưng MISS (player tránh được)
-          setTimeout(function () {
-            _arena.player.flashTimer = 5;
-            _arena.player.flashColor = 'rgba(192,57,43,0.25)'; // nhạt — zombie gần trúng
-          }, 200);
-        }
-
-      } else {
-        // ── MISS: player trượt — zombie áp sát (không mất HP ngay) ──
-        // HP chỉ mất khi bấm NGHỈ (Threat Round). Miss chỉ tốn STM.
-        _addEffect('miss_text', targetArena ? targetArena.px + 8 : pPos.px, targetArena ? targetArena.py : pPos.py, { maxLife: 25 });
-
-        // Flash nhẹ trên zombie (đang áp sát player) — KHÔNG flash player
-        if (targetArena) {
-          targetArena.flashTimer = 8;
-          targetArena.flashColor = '#ff9900'; // cam — zombie đang tăng áp lực
-        }
-
-        // Không show dmg từ player (dmgTaken=0 theo thiết kế mới)
-      }
-
-      // ── CẬP NHẬT UI ───────────────────────────────
-      _renderEnemyList(_arena.enemies);
-      _updateHUD(result.state || state);
-
-      // Màu log: vàng=hit, xanh=miss (player bị tổn thương)
-      var logColor = isHit ? (enemyDead ? '#44aa44' : '#ff8844') : '#cc6644';
-      _showLog(newLog, logColor);
-
-      // ── KIỂM TRA KẾT THÚC ─────────────────────────
-      if (result.state && result.state.gameOver) {
-        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
-        setTimeout(hide, 2000);
-        return;
-      }
-
-      // Tất cả enemy chết
-      var allDead = _arena.enemies.every(function (e) { return e.dead || e.hp <= 0; });
-      if (allDead) {
-        _showLog('✅ Kẻ thù đã bị tiêu diệt!', '#44aa44');
-        setTimeout(hide, 1600);
-        _arena.phase = 'idle';
-        return;
-      }
-
-      _arena.phase = 'idle';
-      _updateButtons();
-
-    }, 180);
-  }
-
-  // Xử lý flee
-  function _doFlee() {
-    var state = gs && gs._state;
-    if (!state) return;
-    if (_arena.phase !== 'idle') return;
-
-    _arena.phase = 'enemy_attack';
-
-    var fleeRawFn = (typeof _raw !== 'undefined' && _raw.DW_flee) ? _raw.DW_flee
-                : (typeof window.DW_fleeRaw === 'function') ? window.DW_fleeRaw
-                : null;
-    if (!fleeRawFn) { _showLog('⚠ Engine flee unavailable', '#cc2200'); _arena.phase='idle'; return; }
-
-    var result = fleeRawFn(state, {});
-    if (result.state) gs.setState(result.state);
-
-    var msg = (result.state && result.state.log && result.state.log[0]) || result.msg || 'Bỏ chạy...';
-
-    if (result.ok) {
-      // Thoát thành công — player lùi xanh
-      _arena.player.flashTimer = 10;
-      _arena.player.flashColor  = '#2255aa';
-      _showLog('🏃 ' + msg, '#4488cc');
-      setTimeout(hide, 900);
-    } else {
-      // Flee thất bại — bị zombie đánh
-      var dmgTaken = result.dmgTaken || 0;
-      _arena.player.flashTimer = 16;
-      _arena.player.flashColor  = '#cc2200';
-
-      if (dmgTaken > 0) {
-        var pPos = _playerPixelPos();
-        _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
-          maxLife: 35, dmg: dmgTaken,
-        });
-      }
-
-      _updateHUD(result.state || state);
-
-      // Kiểm tra game over sau flee thất bại
-      if (result.state && result.state.gameOver) {
-        _showLog('💀 BỎ CHẠY THẤT BẠI — ' + msg, '#cc2200');
-        setTimeout(hide, 2000);
-        return;
-      }
-
-      _showLog('⚠ ' + msg, '#cc6644');
-      _arena.phase = 'idle';  // reset phase để player có thể hành động tiếp
-      _updateButtons();
-    }
-  }
-
-  // ── THREAT ROUND (nút Nghỉ trong arena) ───────────────────────────
-  // Gọi DW_threatRound() từ engine-combat — tất cả zombie phản công 1 lần,
-  // player hồi 60% STM. Animation: flash đỏ player + hiển thị dmg từng zombie.
-  function _doThreatRound() {
-    var state = gs && gs._state;
-    if (!state) return;
-    if (_arena.phase !== 'idle') return;
-
-    _arena.phase = 'enemy_attack';
-
-    // Gọi engine
-    var threatFn = (typeof DW_threatRound === 'function') ? DW_threatRound : null;
-    if (!threatFn) {
-      // Fallback: không có engine function → chỉ hồi STM, không mất HP
-      var maxStm = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : 10;
-      var newStm = Math.min(maxStm, Math.ceil(maxStm * 0.60));
-      var fallbackState = Object.assign({}, state, { stamina: newStm, maxStamina: maxStm, threatPressure: 0 });
-      gs.setState(fallbackState);
-      _showLog('😮‍💨 Nghỉ — SB hồi một phần.', '#7aaa7a');
-      _arena.phase = 'idle';
-      _updateButtons();
-      return;
-    }
-
-    var result = threatFn(state);
-    if (result.state) gs.setState(result.state);
-
-    var dmgTaken  = result.totalDmg || 0;
-    var zCount    = result.zombieCount || 0;
-    var pPos      = _playerPixelPos();
-
-    if (dmgTaken > 0) {
-      // Animation: flash đỏ player + số dmg
-      _arena.player.flashTimer = 25;
-      _arena.player.flashColor = '#cc2200';
-      _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
-        maxLife: 40,
-        dmg: dmgTaken,
-      });
-
-      // Tất cả zombie sống chớp sáng (đang tấn công)
-      for (var i = 0; i < _arena.enemies.length; i++) {
-        if (!_arena.enemies[i].dead && _arena.enemies[i].hp > 0) {
-          _arena.enemies[i].flashTimer = 12;
-          _arena.enemies[i].flashColor = '#ff6600';
-        }
-      }
-    }
-
-    setTimeout(function () {
-      var newState = result.state || state;
-
-      _updateHUD(newState);
-      _renderEnemyList(_arena.enemies);
-
-      if (dmgTaken > 0) {
-        var logColor = newState.gameOver ? '#cc2200' : '#ff8844';
-        _showLog(
-          zCount > 0
-            ? ('💥 ' + zCount + ' zombie phản công — mất ' + dmgTaken + ' HP. SB hồi lại!')
-            : '😮‍💨 Nghỉ an toàn — SB hồi đầy.',
-          logColor
-        );
-      } else {
-        _showLog('😮‍💨 Nghỉ an toàn — SB hồi đầy.', '#7aaa7a');
-      }
-
-      if (newState.gameOver) {
-        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
-        setTimeout(hide, 2000);
-        return;
-      }
-
-      _arena.phase = 'idle';
-      _updateButtons();
-    }, 300);
-  }
-
-  // ── SHOW / HIDE ───────────────────────────────────
-
-  var _onHideCallback = null;
-
-  function show(state, hintObjIdx) {
-    _createDOM();
-    if (!state) return;
-    _visible = true;
-
-    // Lấy enemies từ tile hiện tại
-    var tileKey = state.x + ',' + state.y;
-    var tile    = state.tiles && state.tiles[tileKey];
-    var rawEnemies = [];
-
-    if (tile && tile.objects) {
-      rawEnemies = tile.objects.filter(function (o) {
-        // Look up def by type
-        var def = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[o.type] : null;
-        if (def && def.type === 'enemy') return true;
-        // Fallback: check obj.type starts with zombie/enemy
-        if (o.type && (o.type.indexOf('zombie') >= 0 || o.type.indexOf('enemy') >= 0)) return true;
-        return false;
-      }).filter(function(o) {
-        return o.alive !== false; // chỉ enemy còn sống
-      });
-    }
-
-    // Pre-select hint enemy if provided
-    var hintObjId = null;
-    if (typeof hintObjIdx === 'number' && tile && tile.objects) {
-      var hintObj = tile.objects[hintObjIdx];
-      if (hintObj) hintObjId = hintObj.id;
-    }
-
-    // Boss
-    var boss = state.activeBosses && state.activeBosses[tileKey];
-
-    // Xây dựng arena enemies
-    _arena.enemies = [];
-    var totalCount = rawEnemies.length + (boss ? 1 : 0);
-
-    if (boss) {
-      var bDef = (typeof BOSS_DEFS !== 'undefined') ? (BOSS_DEFS[boss.id] || {}) : {};
-      var bPos = _enemyPixelPos(0, totalCount);
-      _arena.enemies.push({
-        id:      'boss_' + boss.id,
-        type:    boss.id,
-        hp:      boss.hp    || bDef.hp    || 30,
-        maxHp:   bDef.maxHp || bDef.hp    || 30,
-        px:      bPos.px,
-        py:      bPos.py,
-        dead:    false,
-        flashTimer: 0,
-        selected:   false,
-        isBoss:     true,
-        bossName:   bDef.name || 'BOSS',
-      });
-    }
-
-    for (var i = 0; i < rawEnemies.length; i++) {
-      var re    = rawEnemies[i];
-      var reDef = (typeof OBJECT_DEFS !== 'undefined') ? (OBJECT_DEFS[re.type] || {}) : {};
-      var offset = boss ? i + 1 : i;
-      var rPos  = _enemyPixelPos(offset, totalCount);
-      _arena.enemies.push({
-        id:      re.id,
-        type:    re.type,
-        // Khớp với engine-combat: objMaxHp = objDef.maxHp || objDef.hp || 5
-        hp:      re.hp    != null ? re.hp    : (reDef.maxHp || reDef.hp || 5),
-        maxHp:   re.maxHp != null ? re.maxHp : (reDef.maxHp || reDef.hp || 5),
-        px:      rPos.px,
-        py:      rPos.py,
-        dead:    false,
-        flashTimer: 0,
-        selected:   false,
-        isBoss:     false,
-      });
-    }
-
-    // Player position
-    var pPos = _playerPixelPos();
-    _arena.player.px         = pPos.px;
-    _arena.player.py         = pPos.py;
-    _arena.player.flashTimer = 0;
-
-    // Reset
-    _arena.effects  = [];
-    _arena.phase    = 'idle';
-    _selectedEnemyObjId = null;
-
-    // UI
-    _overlay.classList.add('active');
-    _updateHUD(state);
-    _renderEnemyList(_arena.enemies);
-    _updateButtons();
-
-    // Auto-select hint enemy or first available
-    if (hintObjId) {
-      _selectEnemy(hintObjId);
-    } else if (_arena.enemies.length > 0) {
-      _selectEnemy(_arena.enemies[0].id);
-    }
-    _showLog('⚠ Chọn mục tiêu và tấn công!');
-
-    // Start render loop
-    if (_raf) cancelAnimationFrame(_raf);
-    _raf = requestAnimationFrame(_render);
-  }
-
-  function hide() {
-    _visible = false;
-    if (_raf) {
-      cancelAnimationFrame(_raf);
-      _raf = null;
-    }
-    if (_overlay) _overlay.classList.remove('active');
-    _selectedEnemyObjId = null;
-    // Reset combat-session flags (role skills có dùng 1 lần/combat)
-    var s = gs && gs._state;
-    if (s) {
-      var ns = { ...s };
-      var dirty = false;
-      if (ns.policeWarnUsed)  { ns.policeWarnUsed  = false; dirty = true; }
-      if (ns.mechRepairUsed)  { ns.mechRepairUsed  = false; dirty = true; }
-      if (ns.combatCounterUsed) { ns.combatCounterUsed = 0; dirty = true; }
-      if (dirty && typeof gs.setState === 'function') gs.setState(ns);
-    }
-    // Sync game world UI after combat
-    if (typeof UI_renderAll === 'function') {
-      setTimeout(UI_renderAll, 50);
-    }
-  }
-
-  // Hook tích hợp: ghi đè gs.fight để tự mở arena
-  function installHook() {
-    // Gọi sau khi gs đã khởi tạo
-    // Thêm DWArena.openForCurrentTile() vào UI trigger
-    // (UI gọi DWArena.openForCurrentTile() thay vì gọi trực tiếp DW_fight)
-  }
-
-  // Mở arena cho tile hiện tại
-  function openForCurrentTile() {
-    var state = gs && gs._state;
-    if (!state) return;
-    var tileKey = state.x + ',' + state.y;
-    var tile = state.tiles && state.tiles[tileKey];
-    var hasEnemy = tile && tile.objects && tile.objects.some(function (o) {
-      var def = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[o.type] : null;
-      return def && def.type === 'enemy';
-    });
-    var hasBoss = state.activeBosses && state.activeBosses[tileKey];
-
-    if (hasEnemy || hasBoss) {
-      show(state);
-    }
-  }
-
-  // ── PUBLIC ────────────────────────────────────────
   return {
-    show:               show,
-    hide:               hide,
-    openForCurrentTile: openForCurrentTile,
-    installHook:        installHook,
+    ...state,
+    stamina:       newStm,
+    lastStmRegenMs: state.lastStmRegenMs + gained * STM_REGEN_MS,
+  };
+}
+
+// ── DW_apMax — Multi-factor ───────────────────────────
+// AP max phản ánh toàn bộ trạng thái thể chất + tâm lý nhân vật.
+// Thiếu ăn uống, stress cao, bị thương đều làm giảm AP max ngay lập tức.
+// Đây là "live snapshot" — không cần extra state fields.
+function DW_apMax(state) {
+  let max = AP_MAX_BASE;
+
+  // ── Skill & job bonuses ──────────────────────────────
+  // fitness: +1/level nhưng cap tại 4 (không phải 5).
+  // Lý do: fitness 5 + farmer 3 = 28 AP — gần ceiling 30, phá tension.
+  // Cap tại 4 → farmer max = 20+4+2 = 26, vẫn cao nhất nhưng không trivial.
+  max += Math.min(4, state.skills?.fitness || 0);
+  if (state.job === 'farmer')  max += 2;  // v2: giảm từ 3→2; farmer vẫn cao nhất
+  if (state.job === 'soldier') max += 1;
+
+  // ── Hunger penalty ───────────────────────────────────
+  // Đói làm chậm mọi hành động — feedback ngay, không phải chỉ qua HP
+  const hunger = state.hunger ?? 5;
+  if (hunger < 1)  max -= 4;       // sắp chết đói: kiệt sức nặng
+  else if (hunger < 3) max -= 2;   // đói: chậm rõ rệt
+
+  // ── Thirst penalty ───────────────────────────────────
+  // Mất nước nguy hiểm hơn đói — penalty nặng hơn
+  const thirst = state.thirst ?? 5;
+  if (thirst < 0.5) max -= 5;      // sắp chết khát: cực kỳ kiệt sức
+  else if (thirst < 2) max -= 2;   // khát: mất tập trung, yếu đi
+
+  // ── Stress penalty ───────────────────────────────────
+  const stress = state.stress ?? 0;
+  if (stress >= 70) max -= 2;      // distressed: cơ thể căng thẳng
+  else if (stress >= 50) max -= 1; // anxious: khó tập trung
+
+  // ── Depression penalty ───────────────────────────────
+  const dep = state.depression ?? 0;
+  if (dep >= 75) max -= 2;         // trầm cảm nặng: thiếu động lực nghiêm trọng
+  else if (dep >= 50) max -= 1;    // trầm cảm vừa: chậm chạp, uể oải
+
+  // ── Wound/status penalties ───────────────────────────
+  if ((state.statuses||[]).includes('bleed'))    max -= 1;
+  if ((state.statuses||[]).includes('infected')) max -= 2;
+  if ((state.statuses||[]).includes('groggy'))   max -= 1; // sau khi ngủ không đủ giấc
+
+  // ── Encumbrance penalty ──────────────────────────────
+  if (DW_overEncumbered(state)) max -= 2;
+
+  // ── Farmer: ap_max_absolute_bonus (nguoi_chay_marathon) ──
+  // Cộng trực tiếp vào max AP — bypass base cap thông thường
+  const apBonus = DW_getSkillEffect(state, 'nguoi_chay_marathon', 'ap_max_absolute_bonus');
+  if (apBonus > 0) max += apBonus;
+
+  // ── Farmer: hunger/thirst penalty reduction (suc_ben_vo_tan) ──
+  // Áp dụng ngược lại: nếu đã trừ penalty ở trên thì hoàn lại một phần
+  const htReduce = DW_getSkillEffect(state, 'suc_ben_vo_tan', 'hunger_thirst_ap_penalty_reduce');
+  if (htReduce > 0) {
+    // Tính lại phần penalty đã trừ và hoàn một phần theo tỉ lệ skill
+    const h = state.hunger ?? 5;
+    const t = state.thirst ?? 5;
+    let penaltyAlreadyApplied = 0;
+    if (h < 1)       penaltyAlreadyApplied += 4;
+    else if (h < 3)  penaltyAlreadyApplied += 2;
+    if (t < 0.5)     penaltyAlreadyApplied += 5;
+    else if (t < 2)  penaltyAlreadyApplied += 2;
+    max += Math.floor(penaltyAlreadyApplied * htReduce);
+  }
+
+  // ── Farmer: carry weight bonus (nguoi_chay_marathon) ──
+  const carryBonus = DW_getSkillEffect(state, 'nguoi_chay_marathon', 'carry_weight_bonus');
+  if (carryBonus > 0) {
+    // Không tăng AP max — nhưng tăng carry limit để remove encumbrance penalty
+    // Handled trong DW_overEncumbered via state.carryBonusCache (set ở đây)
+    // Note: side effect nhỏ — dùng cached value để không phải truyền state vào DW_CARRY_MAX
+    state._carryBonusCache = carryBonus; // UI hint only, không mutate state thật
+  }
+
+  return Math.min(AP_MAX_STAMINA + apBonus, Math.max(AP_EXHAUSTION_FLOOR, max));
+}
+
+function DW_apRegen(state, nowMs) {
+  if (!state.lastRegenMs) return state;
+  const elapsed = nowMs - state.lastRegenMs;
+
+  // ── Farmer: ap_regen_flat — thêm AP regen tuyệt đối mỗi chu kỳ ──
+  const regenFlat  = DW_getSkillEffect(state, 'nguoi_chay_marathon', 'ap_regen_flat');
+  // ap_regen_flat = số AP thêm mỗi 2 phút (1 chu kỳ cơ bản)
+  // Tính: nếu có bonus, regen rate = (1 + regenFlat) AP/chu kỳ
+  const totalPerCycle = 1 + (regenFlat || 0);
+  const gained = Math.floor(elapsed / AP_REGEN_MS * totalPerCycle);
+  if (gained <= 0) return state;
+
+  const maxAp = DW_apMax(state);
+
+  // ── Farmer: morning bonus (buoc_chan_thu_hai) ──
+  // state.morningBonusUntilHour: set khi ngủ dậy nếu có skill này
+  // Trong thời gian bonus: AP regen nhanh hơn (morningBonusMul)
+  let ap = state.ap;
+  if (state.morningBonusUntilHour != null) {
+    const bonusMul = 1 + DW_getSkillEffect(state, 'buoc_chan_thu_hai', 'morning_ap_regen_bonus');
+    // Kiểm tra còn trong window không (giờ game tăng theo AP spent, không theo realtime)
+    // Đơn giản hóa: bonus active cho đến khi flag được clear bởi DW_advanceDay
+    const bonusGained = Math.floor(elapsed / AP_REGEN_MS * bonusMul);
+    ap = Math.min(maxAp, state.ap + bonusGained);
+  } else {
+    ap = Math.min(maxAp, state.ap + gained);
+  }
+
+  return {
+    ...state,
+    ap,
+    lastRegenMs: state.lastRegenMs + Math.floor(elapsed / AP_REGEN_MS) * AP_REGEN_MS,
+  };
+}
+
+// ── DW_checkExhaustion ───────────────────────────────
+// Gọi sau mỗi action để xử lý trạng thái AP = 0.
+// Nếu hết AP mà vẫn phải hành động (combat, di chuyển khẩn cấp),
+// nhân vật "push through" bằng cách tiêu HP thay cho AP.
+// Đây là safety valve — không khóa player, nhưng có chi phí thật.
+function DW_checkExhaustion(state) {
+  if (state.ap > 0) return state;
+
+  // ── Farmer: legendary_stamina — AP không về 0 từ hành động thường ──
+  // Exception: combat và boss attack vẫn trigger exhaustion
+  // Iron Stamina signature skill cũng có exhaustion_immune cho non-combat
+  const hasLegendaryStamina = DW_getSkillEffect(state, 'nguoi_chay_marathon', 'legendary_stamina');
+  const hasIronStamina = DW_hasSignatureSkill(state, 'iron_stamina');
+  const isNonCombatExhaustion = !state._combatExhaustionFlag; // flag set bởi engine-combat khi combat
+  if ((hasLegendaryStamina || hasIronStamina) && isNonCombatExhaustion) {
+    // Không trigger exhaustion penalty cho non-combat — nhưng vẫn log
+    return { ...state,
+      log: ['💪 Kiệt sức — nhưng cơ thể vẫn tiếp tục.', ...(state.log||[])] };
+  }
+
+  let s = { ...state, stress: Math.min(100, (state.stress||0) + 3) };
+
+  const tileKey = `${s.x},${s.y}`;
+  const tile    = s.tiles?.[tileKey];
+  const hasZombie = (tile?.objects||[]).some(
+    o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false
+  );
+
+  if (hasZombie && (tile?.barricade || 0) === 0) {
+    const dmg  = 1;
+    s.hp       = Math.max(0, s.hp - dmg);
+    s.log      = ['😮‍💨 Kiệt sức! Zombie đánh vào lúc bạn không phòng bị — mất 1 HP.', ...(s.log||[])];
+    if (s.hp <= 0) s.gameOver = true;
+  }
+
+  return s;
+}
+
+// ── CARRY WEIGHT ──────────────────────────────────────
+var DW_CARRY_MAX = 20;
+function DW_overEncumbered(state) {
+  return DW_invWeight(state.inventory) > DW_CARRY_MAX;
+}
+
+// ── WORLD GENERATION (Biome-Based) ────────────────────
+// Layer 1: place biome regions using Voronoi-like seeded points
+// Layer 2: place rivers as horizontal/vertical bands
+// Layer 3: place roads connecting regions
+// Layer 4: stamp key locations
+function DW_generateWorld(gameId) {
+  const rng   = mulberry32(gameId);
+  const size  = DW_WORLD_SIZE;
+  const tiles = {};
+
+  // ── Layer 1: Biome regions (Voronoi seeds) ──
+  // Create ~8 biome seeds scattered around the map
+  const seeds = [];
+  for (let i = 0; i < 8; i++) {
+    seeds.push({
+      x: Math.floor(rng() * size),
+      y: Math.floor(rng() * size),
+      biome: BIOME_DEFS[Math.floor(rng() * BIOME_DEFS.length)],
+    });
+  }
+  // Ensure city biome exists (one random seed overridden near center)
+  seeds[0] = { x: DW_SPAWN_X + Math.floor((rng()-.5)*6), y: DW_SPAWN_Y + Math.floor((rng()-.5)*6), biome: BIOME_DEFS[2] }; // city near spawn
+  seeds[1] = { x: Math.floor(rng() * 8),                  y: Math.floor(rng() * 8),                  biome: BIOME_DEFS[0] }; // forest corner
+  seeds[2] = { x: size - Math.floor(rng() * 8) - 1,       y: size - Math.floor(rng() * 8) - 1,       biome: BIOME_DEFS[0] }; // forest opposite
+
+  // ── Layer 2: River bands ──
+  // Vùng bảo vệ quanh spawn: river KHÔNG được cắt qua ±5 tile xung quanh (15,15)
+  const RIVER_SAFE  = 5; // bán kính bảo vệ tính từ spawn center
+  const riverDir    = rng() > 0.5 ? 'h' : 'v';
+  const riverWidth  = 1 + Math.floor(rng() * 2);
+  // Chọn vị trí river đảm bảo không cắt qua spawn zone
+  let riverX, riverY;
+  // Thử tối đa 20 lần để tìm vị trí hợp lệ; nếu không được thì bỏ qua river
+  let riverValid = false;
+  for (let _t = 0; _t < 20; _t++) {
+    riverX = Math.floor(rng() * (size - 10)) + 5;
+    riverY = Math.floor(rng() * (size - 10)) + 5;
+    if (riverDir === 'v') {
+      // River dọc: cần riverX xa spawn X ít nhất RIVER_SAFE + width
+      if (Math.abs(riverX - DW_SPAWN_X) > RIVER_SAFE + riverWidth) { riverValid = true; break; }
+    } else {
+      // River ngang: cần riverY xa spawn Y ít nhất RIVER_SAFE + width
+      if (Math.abs(riverY - DW_SPAWN_Y) > RIVER_SAFE + riverWidth) { riverValid = true; break; }
+    }
+  }
+  // Nếu vẫn không tìm được vị trí hợp lệ → đẩy river ra vùng rìa bản đồ
+  if (!riverValid) {
+    riverX = riverDir === 'v' ? (rng() > 0.5 ? 2 : size - 3) : DW_SPAWN_X;
+    riverY = riverDir === 'h' ? (rng() > 0.5 ? 2 : size - 3) : DW_SPAWN_Y;
+  }
+
+  // ── Layer 3: Road bands ──
+  const road1Y = Math.floor(rng() * (size - 6)) + 3;
+  const road1X = Math.floor(rng() * (size - 6)) + 3;
+
+  // ── Fill tiles ──
+  for (let x = 0; x < size; x++) {
+    for (let y = 0; y < size; y++) {
+      const key = `${x},${y}`;
+
+      // River takes priority
+      if (riverDir === 'h' && Math.abs(y - riverY) < riverWidth) {
+        tiles[key] = DW_makeTile(gameId, x, y, 'river', null, null);
+        continue;
+      }
+      if (riverDir === 'v' && Math.abs(x - riverX) < riverWidth) {
+        tiles[key] = DW_makeTile(gameId, x, y, 'river', null, null);
+        continue;
+      }
+
+      // Road bands
+      if (Math.abs(y - road1Y) === 0 || Math.abs(x - road1X) === 0) {
+        tiles[key] = DW_makeTile(gameId, x, y, 'road', null, null);
+        continue;
+      }
+
+      // Find nearest biome seed (Voronoi)
+      let nearestSeed = seeds[0];
+      let minDist = Infinity;
+      for (const s of seeds) {
+        const d = (s.x - x) ** 2 + (s.y - y) ** 2;
+        if (d < minDist) { minDist = d; nearestSeed = s; }
+      }
+      const biome = nearestSeed.biome;
+
+      // Pick terrain from biome pool
+      const r2 = mulberry32(hashCoord(gameId, x * 7 + 3, y * 13 + 5));
+      const pool = biome.tiles;
+      let tileType = pool[Math.floor(r2() * pool.length)];
+
+      // Scatter landmarks inside biome (~5% chance)
+      if (r2() < 0.05 && biome.landmarks.length > 0) {
+        tileType = biome.landmarks[Math.floor(r2() * biome.landmarks.length)];
+      }
+
+      tiles[key] = DW_makeTile(gameId, x, y, tileType, null, null);
+    }
+  }
+
+  // ── Layer 4: Key locations (overwrite) ──
+  for (const kl of KEY_LOCATIONS) {
+    const x = DW_SPAWN_X + kl.dx;
+    const y = DW_SPAWN_Y + kl.dy;
+    if (x >= 0 && y >= 0 && x < size && y < size) {
+      tiles[`${x},${y}`] = DW_makeTile(gameId, x, y, kl.type, kl.name, kl.special);
+    }
+  }
+
+  return tiles;
+}
+
+// DW_makeTile — tạo tile với objects spawn
+// v3.2: thêm tham số `day` để filter enemy theo minDay (day-gating)
+// - day=1: chỉ zombie/zombie_walker/zombie_fast (minDay=1)
+// - day=2: +zombie_runner
+// - day=3: +zombie_brute
+// - day=4: +zombie_bloated
+// - day=5: +zombie_boss
+// Tiles đã sinh (world gen) giữ nguyên objects cũ — filter chỉ áp dụng khi tile được tạo lần đầu.
+// DW_generateWorld gọi DW_makeTile với day=1 (khởi tạo), tiles re-roll KHÔNG xảy ra.
+function DW_makeTile(gameId, x, y, type, nameOverride, special, day) {
+  const rng    = mulberry32(hashCoord(gameId, x, y));
+  const pool   = TILE_OBJECT_POOLS[type] || TILE_OBJECT_POOLS['street'];
+  const n      = 2 + Math.floor(rng() * 3);
+  const objects = [];
+
+  // Spawn tile: loại bỏ enemy khỏi pool — người chơi không bị giết ngay khi vào game
+  const isSpawn  = (special === 'spawn');
+
+  // v3.2 day-gating: filter enemy theo minDay
+  // currentDay = day || 1 (default ngày 1 khi world gen khởi tạo)
+  const currentDay = (typeof day === 'number' && day > 0) ? day : 1;
+
+  const safePool = isSpawn
+    ? pool.filter(t => {
+        const d = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[t] : null;
+        return d ? d.type !== 'enemy' : !t.startsWith('zombie');
+      })
+    : pool.filter(t => {
+        const d = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[t] : null;
+        if (!d || d.type !== 'enemy') return true;       // non-enemy: luôn giữ
+        const minDay = d.minDay || 1;
+        return minDay <= currentDay;                     // chỉ spawn nếu đủ ngày
+      });
+
+  const usedPool = (safePool && safePool.length > 0) ? safePool : pool;
+
+  for (let i = 0; i < n; i++) {
+    objects.push({
+      type: usedPool[Math.floor(rng() * usedPool.length)],
+      id: `${x}_${y}_${i}`,
+      searched: false,
+    });
+  }
+  return {
+    x, y, type,
+    name: nameOverride || TILE_TYPES[type]?.name || type,
+    special: special || null,
+    objects, explored: false, barricade: 0, noiseLvl: 0,
+  };
+}
+
+// ── WIN CONDITION ─────────────────────────────────────
+// v1 BUG: checked tile type but never set gameWon = true
+// v2 FIX: correctly sets gameWon and requires antidote_blueprint
+function DW_checkWinCondition(state) {
+  const ex = DW_SPAWN_X + 9, ey = DW_SPAWN_Y + 9;
+  if (state.x !== ex || state.y !== ey) return state;
+
+  const tile = state.tiles[`${ex},${ey}`];
+  if (tile?.type !== 'tunnel') return state;
+
+  const hasBlueprint = DW_invFindId(state.inventory, 'antidote_blueprint') !== -1;
+  if (!hasBlueprint) {
+    const alreadyLogged = (state.log||[]).some(l => l.includes('Antidote Blueprint'));
+    if (!alreadyLogged) {
+      return {
+        ...state,
+        log: ['⛏ Cửa hầm thoát! Cần Antidote Blueprint — tiêu diệt Dr. Zero trước.', ...(state.log||[])],
+      };
+    }
+    return state;
+  }
+
+  return { ...state, gameWon: true };   // ← WIN
+}
+
+// ── DAY ADVANCE ───────────────────────────────────────
+// v2: KHÔNG decay hunger/thirst ở đây nữa.
+// Decay đã được tính liên tục qua DW_needsDecay(apSpent) trong _DW_worldTick.
+// advanceDay chỉ xử lý: consequence check (đói/khát gây HP loss),
+// stress build, status tick, và equip durability decay.
+function DW_advanceDay(state) {
+  let s = { ...state, day: state.day + 1 };
+
+  // ── Reset daily skill counters ──────────────────────
+  // free_actions (nguoi_nhieu_viec), no_idle (nguoi_nhieu_viec mastery),
+  // ghost_exit (thoat_hiem_chuyen_nghiep lv7), abundance tile search counts
+  s.freeActionsUsed    = 0;
+  s.noIdleCount        = 0;
+  s.ghostExitUsedToday = 0;
+  s.secondWindUsed     = false;   // ap_zero_heal (nhip_tho_deu lv7)
+  s.natureHealUsed     = false;   // nature_heal (mot_voi_thien_nhien lv5)
+  s.dailyForageUsed    = false;   // daily_forage (tim_kiem_ban_nang lv5)
+  s.wildFoodUsed       = false;   // forager_instinct daily_wild_food
+  s.oracleUsed         = s.oracleUsed || false; // oracle 1 lần/game — không reset
+  s.autoFleeUsed       = false;   // auto_flee_once (phan_xa_lai_xe lv3)
+  // Mechanic daily counters
+  s.fullRestoreUsed      = false; // full_restore (tay_nghe_vung lv5) — 1 lần/ngày
+  s.automatedCraftUsed   = 0;     // automated_craft (day_chuyen_san_xuat lv10) — tối đa 3
+  s.repairFromNothingUsed= false; // repair_from_nothing (sua_bang_bat_cu_thu_gi lv7)
+  s.triageRepairUsed     = false; // triage_repair (chan_doan_nhanh lv3) — 1 lần/ngày
+  s.preCombatCheckDone   = false; // pre_combat_check (bao_tri_dinh_ky lv7) — 1 lần/ngày
+
+  // Reset abundance daily search count trên tất cả tile
+  if (s.tileAbundanceCount) s.tileAbundanceCount = {};
+
+  // ── Mechanic: trap cooldown reset (bay_co_hoc lv2+ trap_reset) ──
+  // Mỗi ngày mới, giảm cooldown bẫy và reactivate nếu cooldown = 0
+  if (s.job === 'mechanic' && s.tileTrap) {
+    const newTraps = { ...s.tileTrap };
+    for (const [tk, trap] of Object.entries(newTraps)) {
+      if (!trap.active && trap.reset && trap.cooldown > 0) {
+        const newCooldown = trap.cooldown - 1;
+        newTraps[tk] = { ...trap, cooldown: newCooldown, active: newCooldown <= 0 };
+      }
+    }
+    s.tileTrap = newTraps;
+  }
+
+  // ── Morning bonus từ buoc_chan_thu_hai ──────────────
+  // Nếu player vừa ngủ (set bởi DW_sleep), morningBonusUntilHour sẽ được set
+  // advanceDay không clear morning bonus — DW_tick kiểm tra hour để clear
+
+  // Stress tích lũy mỗi ngày
+  const mentalSkill = s.skills?.mental || 0;
+  const stressBuild = Math.max(0, 5 - mentalSkill * 2);
+  const stressRate  = s.job === 'teacher' ? 0.6 : 1.0;
+
+  // Farmer: stress_from_hunger_immune (suc_ben_vo_tan lv5) — không cộng stress khi đói
+  const hungerStressImmune = s.job === 'farmer' &&
+    DW_getSkillEffect(s, 'suc_ben_vo_tan', 'stress_from_hunger_immune');
+  if (!(hungerStressImmune && (s.hunger < 3 || s.thirst < 3))) {
+    s.stress = Math.min(100, s.stress + stressBuild * stressRate);
+  }
+
+  s = DW_tickStatuses(s);
+
+  // Consequence: đói/khát cực độ
+  if (s.hunger <= 0 || s.thirst <= 0) {
+    // Farmer: famine_mode — không mất HP khi hunger = 0
+    const famineMode = s.job === 'farmer' &&
+      DW_getSkillEffect(s, 'suc_ben_vo_tan', 'famine_mode');
+    if (!famineMode) {
+      s.hp  = Math.max(0, s.hp - 2);
+      s.log = [`Ngày ${s.day}: ${s.hunger<=0?'Chết đói':'Khát nước'} — mất 2 HP!`, ...(s.log||[])];
+    } else {
+      s.log = [`Ngày ${s.day}: Đói nhưng cơ thể vẫn hoạt động. (Famine Mode)`, ...(s.log||[])];
+    }
+  }
+  if (s.hp <= 0) s.gameOver = true;
+
+  // Equip durability decay
+  const newDur   = { ...(s.equipDur || {}) };
+  const newEquip = { ...(s.equip || {}) };
+
+  // Mechanic: barricade_repair_passive (barricade_chuyen_nghiep lv7)
+  // Barricade của tile hiện tại tự hồi 1 level mỗi sáng nếu còn > 0
+  if (s.job === 'mechanic') {
+    const passiveRepair = DW_getSkillEffect(s, 'barricade_chuyen_nghiep', 'barricade_repair_passive');
+    if (passiveRepair) {
+      const tk = `${s.x},${s.y}`;
+      const tileNow = s.tiles?.[tk];
+      if (tileNow && tileNow.barricade > 0 && tileNow.barricade < 5) {
+        s = { ...s, tiles: { ...s.tiles, [tk]: { ...tileNow, barricade: tileNow.barricade + 1 } } };
+        s.log = ['🔧 Barricade Passive Repair: tự hồi +1 level.', ...(s.log||[])];
+      }
+    }
+  }
+
+  // Mechanic: equipment_decay_slow (bao_tri_dinh_ky lv5)
+  const decaySlow = s.job === 'mechanic'
+    ? DW_getSkillEffect(s, 'bao_tri_dinh_ky', 'equipment_decay_slow')
+    : 0;
+  // Mechanic: durability_floor (vinh_cuu lv1+)
+  const durFloor = s.job === 'mechanic'
+    ? DW_getSkillEffect(s, 'vinh_cuu', 'durability_floor')
+    : 0;
+  // Mechanic: eternal_maintenance lv10 — floor 10
+  const eternalMaint = s.job === 'mechanic' &&
+    DW_getSkillEffect(s, 'bao_tri_dinh_ky', 'eternal_maintenance');
+
+  for (const [slot, id] of Object.entries(newEquip)) {
+    if (id && newDur[slot] != null) {
+      // Farmer: indestructible_tool — công cụ không về 0 durability
+      const isToolSlot = slot === 'tool';
+      const indestructible = isToolSlot && s.job === 'farmer' &&
+        DW_getSkillEffect(s, 'va_viu', 'indestructible_tool');
+
+      // Mechanic: decay_slow giảm lượng durability mất hàng ngày
+      let decayAmt = 1;
+      if (decaySlow > 0) {
+        // 30% slow = 70% of base decay, tinh toán bằng xác suất
+        decayAmt = Math.random() > decaySlow ? 1 : 0;
+      }
+
+      const floor = eternalMaint ? 10 : (indestructible && isToolSlot ? 1 : (durFloor || 0));
+      newDur[slot] = Math.max(floor, newDur[slot] - decayAmt);
+      if (newDur[slot] <= 0 && floor <= 0) {
+        s.log = [`[Trang bị] ${DW_itemName(id)} đã hỏng!`, ...(s.log||[])];
+        newEquip[slot] = null;
+        delete newDur[slot];
+      }
+    }
+  }
+  s.equip    = newEquip;
+  s.equipDur = newDur;
+
+  // ── Mechanic: eternal_bond (vinh_cuu lv7) ─────────────
+  // Vũ khí heirloom tăng 10% damage thêm mỗi ngày mang theo.
+  // Cap: +50% tổng (5 ngày). Lưu vào state.heirloomBondDays.
+  if (s.job === 'mechanic' && s.heirloom?.slot === 'weapon' &&
+      DW_getSkillEffect(s, 'vinh_cuu', 'eternal_bond')) {
+    const heirloomId = s.equip?.weapon;
+    const isEquipped = heirloomId && heirloomId === s.heirloom?.id;
+    if (isEquipped) {
+      const prevDays = s.heirloomBondDays || 0;
+      s.heirloomBondDays = Math.min(5, prevDays + 1); // cap 5 ngày = +50%
+      if (s.heirloomBondDays > prevDays) {
+        s.log = [`🔗 Eternal Bond: ${DW_itemName(heirloomId)} +${s.heirloomBondDays * 10}% damage (ngày ${s.heirloomBondDays}/5).`, ...(s.log||[])];
+      }
+    }
+  }
+
+  // ── Mechanic: indestructible_base (barricade_chuyen_nghiep lv10) ──
+  // Tile hiện tại nếu là tile có barricade lv5 → sàn 1 (không thể về 0 từ threat events).
+  if (s.job === 'mechanic' && DW_getSkillEffect(s, 'barricade_chuyen_nghiep', 'indestructible_base')) {
+    const tk = `${s.x},${s.y}`;
+    const tileNow = s.tiles?.[tk];
+    if (tileNow && tileNow.barricade > 0 && tileNow.barricade < 1) {
+      s = { ...s, tiles: { ...s.tiles, [tk]: { ...tileNow, barricade: 1 } } };
+    }
+  }
+
+  if (typeof DW_directorScore === 'function') {
+    const dir = DW_directorScore(s);
+    s.directorScore = dir.score;
+    s.directorTier  = dir.tier;
+  }
+
+  // Police: danh_tieng_canh_sat / perimeter_alert — rep_warning: biết trước base attack
+  if (s.job === 'police') {
+    const hasWarning = DW_getSkillEffect(s, 'danh_tieng_canh_sat', 'rep_warning') ||
+                       (DW_hasSignatureSkill(s, 'perimeter_alert') &&
+                        DW_getSkillEffect(s, 'perimeter_alert', 'base_attack_warning'));
+    if (hasWarning && s.pendingBaseEvent && !s.baseAttackWarned) {
+      s.baseAttackWarned = true;
+      s.log = [`🚨 Cảnh Báo Vùng — base sắp bị tấn công ngày mai!`, ...(s.log||[])];
+    }
+  }
+
+  return s;
+}
+
+// ── DW_needsDecay ────────────────────────────────────
+// v3: pool 40 AP/ngày → decay rate giảm một nửa so với v2
+// 1 ngày ~40 AP → hungerDecay/AP = 0.05, thirstDecay/AP = 0.063
+function DW_needsDecay(state, apSpent) {
+  if (!apSpent || apSpent <= 0) return state;
+  const cookMul    = state.job === 'cook' ? 0.65 : 1.0;
+  const hungerRate = 0.05  * cookMul;
+  const thirstRate = 0.063 * cookMul;
+  return {
+    ...state,
+    hunger: Math.max(0, state.hunger - hungerRate * apSpent),
+    thirst: Math.max(0, state.thirst - thirstRate * apSpent),
+  };
+}
+
+// Alias giữ backward-compat nếu bất kỳ chỗ nào còn gọi DW_applyDecay
+function DW_applyDecay(state) { return DW_needsDecay(state, 1); }
+
+// ── BUILDING TILE CHECK ───────────────────────────────
+var BUILDING_TILE_TYPES = new Set([
+  'hospital','apartment','school','police','market',
+  'pharmacy','factory','church','bunker','lab','tunnel',
+  'mall','gas_station','radio_tower','zombie_nest','radiation','warehouse','supermarket',
+]);
+function _DW_isBuilding(tileType) {
+  return BUILDING_TILE_TYPES.has(tileType);
+}
+
+// Impassable terrain
+var IMPASSABLE_TILES = new Set(['river','mountain']);
+
+// ── WORLD TICK (extracted from DW_move) ───────────────
+function _DW_worldTick(state, targetX, targetY, apSpent) {
+  // 1 AP = 15 phút game time (với pool 40 AP: ~10h/ngày hoạt động tự nhiên)
+  const hoursAdvanced = apSpent * 0.25;
+  const newHour = (state.hour + hoursAdvanced) % 24;
+
+  let s = {
+    ...state,
+    ap:    state.ap - apSpent,
+    hour:  newHour,
+    noise: Math.max(0, state.noise - 1),
   };
 
-})();
+  if (newHour < state.hour && apSpent > 0) s = DW_advanceDay(s);
+
+  const key  = `${targetX},${targetY}`;
+  const tile = state.tiles[key];
+  const isFirstVisit = !s.exploredTiles.includes(key);
+  if (isFirstVisit) s.exploredTiles = [...s.exploredTiles, key];
+
+  // v3.2 day-gating: re-roll tile objects khi player lần đầu khám phá,
+  // dùng ngày hiện tại để đảm bảo enemy pool đúng với tiến trình.
+  // - Explore sớm (ngày 1) → chỉ zombie/walker/fast (minDay=1)
+  // - Explore muộn (ngày 4+) → có thể gặp bloated, brute
+  // Deterministic: cùng seed (gameId+x+y) → mỗi tile có "số phận" nhất quán per ngày.
+  // Không ảnh hưởng tiles đã explored (isFirstVisit=false).
+  if (isFirstVisit && tile) {
+    const freshTile = DW_makeTile(s.gameId, targetX, targetY, tile.type, tile.name, tile.special, s.day);
+    s.tiles = { ...s.tiles, [key]: { ...freshTile, explored: true } };
+  } else if (tile) {
+    s.tiles = { ...s.tiles, [key]: { ...tile, explored: true } };
+  }
+
+  // ── XP cho khám phá bản đồ (cốt lõi level up theo map) ──
+  if (isFirstVisit) {
+    s = DW_grantCharacterXp(s, 'explore_tile');
+    // explore_new_zone: zone được tính là tập hợp biome, check bằng tile.biome
+    const prevBiomes  = s._exploredBiomes || [];
+    const thisBiome   = tile?.biome || tile?.type || '';
+    if (thisBiome && !prevBiomes.includes(thisBiome)) {
+      s = DW_grantCharacterXp(s, 'explore_new_zone');
+      s._exploredBiomes = [...prevBiomes, thisBiome];
+      s.log = [`🗺 Khu vực mới — ${thisBiome}! +30 XP khám phá.`, ...(s.log||[])];
+    }
+  }
+
+  s = DW_needsDecay(s, apSpent);
+  s = DW_checkBossSpawn(s, targetX, targetY);
+  s = DW_checkWinCondition(s);
+  s = DW_tickNoise(s);
+  s = DW_checkExhaustion(s);
+
+  return s;
+}
+
+// ── MOVE ──────────────────────────────────────────────
+function DW_move(state, dx, dy) {
+  const nx = state.x + dx, ny = state.y + dy;
+  if (nx < 0 || ny < 0 || nx >= DW_WORLD_SIZE || ny >= DW_WORLD_SIZE)
+    return { state, msg: 'Không thể đi ra ngoài bản đồ.', ok: false };
+
+  const tile     = state.tiles[`${nx},${ny}`];
+  const tileType = tile?.type || 'street';
+
+  if (IMPASSABLE_TILES && IMPASSABLE_TILES.has(tileType))
+    return { state, msg: `Không thể vượt qua ${TILE_TYPES[tileType]?.name||tileType}.`, ok: false };
+
+  if (_DW_isBuilding(tileType)) {
+    return DW_approach(state, dx, dy);
+  }
+
+  let apCost = MOVE_COST[tileType] || 1;
+
+  // ── Driver: street_ap_reduction / city_runner ──────
+  const isStreetOrRoad = tileType === 'road' || tileType === 'street';
+  const isAlley        = tileType === 'alley';
+  if (state.job === 'driver') {
+    if (isStreetOrRoad) {
+      const dReduce = DW_getSkillEffect(state, 'toc_do_do_thi', 'street_ap_reduction');
+      apCost = Math.max(1, apCost - (dReduce || 1));
+    }
+    if (isAlley) {
+      const aReduce = DW_getSkillEffect(state, 'toc_do_do_thi', 'alley_ap_reduction');
+      apCost = Math.max(1, apCost - (aReduce || 0));
+    }
+    // city_runner mastery: không bao giờ > 1 AP trong đô thị
+    if (DW_getSkillEffect(state, 'toc_do_do_thi', 'city_runner') && isStreetOrRoad) {
+      apCost = 1;
+    }
+    // terrain_reader signature: mọi outdoor = 1 AP
+    if (DW_hasSignatureSkill(state, 'terrain_reader') &&
+        DW_getSkillEffect(state, 'terrain_reader', 'outdoor_ap_flat')) {
+      apCost = 1;
+    }
+  }
+
+  // ── Farmer: outdoor_ap_reduction (chan_quen_duong) ──
+  const OUTDOOR_TILE_TYPES = new Set(['field','forest','road','plain','swamp','beach','hill']);
+  if (state.job === 'farmer' && OUTDOOR_TILE_TYPES.has(tileType)) {
+    const fReduce = DW_getSkillEffect(state, 'chan_quen_duong', 'outdoor_ap_reduction');
+    if (fReduce > 0) apCost = Math.max(1, apCost - fReduce);
+    const roadReduce = DW_getSkillEffect(state, 'chan_quen_duong', 'road_ap_reduction');
+    if (roadReduce > 0 && tileType === 'road') apCost = Math.max(1, apCost - roadReduce);
+    // terrain_reader signature: override to flat 1
+    if (DW_hasSignatureSkill(state, 'terrain_reader') &&
+        DW_getSkillEffect(state, 'terrain_reader', 'outdoor_ap_flat')) {
+      apCost = 1;
+    }
+  }
+
+  // ── Night penalty ─────────────────────────────────
+  const isNight = state.hour >= 20 || state.hour < 6;
+  if (isNight) {
+    // Farmer: night_penalty_immune (chan_quen_duong lv5)
+    const nightImmune = state.job === 'farmer' &&
+      DW_getSkillEffect(state, 'chan_quen_duong', 'night_penalty_immune');
+    // Police: canh_giac_cao_do — night_awareness (penalty giảm 50%)
+    const policeNightReduce = state.job === 'police' &&
+      DW_getSkillEffect(state, 'canh_giac_cao_do', 'night_awareness');
+    if (!nightImmune) {
+      const toolId = state.equip?.tool;
+      let visPen = toolId ? Math.max(0, 1 - (EQUIP_DEFS[toolId]?.visBonus || 0)) : 1;
+      if (policeNightReduce) visPen = Math.ceil(visPen * 0.5);
+      apCost += visPen;
+    }
+    // Driver: night_street_free / day_street_free
+    if (state.job === 'driver' && isStreetOrRoad &&
+        DW_getSkillEffect(state, 'toc_do_do_thi', 'night_street_free')) {
+      const hasZombieInTile = (tile?.objects||[]).some(
+        o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false);
+      if (!hasZombieInTile) apCost = 0;
+    }
+  } else {
+    // Day: driver day_street_free
+    if (state.job === 'driver' && isStreetOrRoad &&
+        DW_getSkillEffect(state, 'toc_do_do_thi', 'day_street_free')) {
+      const hasZombieInTile = (tile?.objects||[]).some(
+        o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false);
+      if (!hasZombieInTile) apCost = 0;
+    }
+  }
+
+  apCost = Math.max(1, apCost);
+  if (state.ap < apCost)
+    return { state, msg: `Cần ${apCost} ĐHĐ. Bạn còn ${state.ap}.`, ok: false };
+
+  // ── Driver: noise reduction khi di chuyển ─────────
+  let s = { ...state, x: nx, y: ny };
+  if (state.job === 'driver') {
+    const noiseKey = isNight ? 'night_move_noise_reduce' : 'day_move_noise_reduce';
+    // Ưu tiên skill có noise reduce cao nhất
+    const nReduce = Math.max(
+      DW_getSkillEffect(state, 'buoc_nhe', noiseKey) || 0,
+      DW_getSkillEffect(state, 'buoc_nhe', 'day_move_noise_reduce') || 0,
+    );
+    if (nReduce > 0) s.noise = Math.max(0, (s.noise || 0) - nReduce);
+  }
+
+  // ── Farmer: noise reduction ở tile quen thuộc ─────
+  if (state.job === 'farmer') {
+    const tileKey = `${nx},${ny}`;
+    const visitCount = (state.tileVisits?.[tileKey] || 0);
+    if (visitCount > 0) {
+      const rNoise = DW_getSkillEffect(state, 'lanh_tho_quen_thuoc', 'revisit_noise_reduction');
+      if (rNoise > 0) s.noise = Math.max(0, (s.noise || 0) - rNoise);
+    }
+  }
+
+  // ── Track tile visit count (dùng cho Farmer home_ground) ──
+  const visitKey = `${nx},${ny}`;
+  const prevVisits = state.tileVisits?.[visitKey] || 0;
+  s.tileVisits = { ...(state.tileVisits || {}), [visitKey]: prevVisits + 1 };
+
+  // ── Driver: entry preview (doc_tinh_huong) ────────
+  let previewMsg = '';
+  if (state.job === 'driver' && DW_getSkillEffect(state, 'doc_tinh_huong', 'entry_preview_zombie_count')) {
+    const zombieCount = (tile?.objects||[]).filter(
+      o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false).length;
+    if (zombieCount > 0) previewMsg = ` [Trinh sát: ${zombieCount} zombie trong tile]`;
+    else previewMsg = ' [Trinh sát: tile sạch]';
+  }
+
+  s = _DW_worldTick(s, nx, ny, apCost);
+
+  return { state: s, msg: `Di chuyển đến ${tile?.name || tileType}.${previewMsg}`, ok: true };
+}
+
+// ── APPROACH (bước 1 vào building) ───────────────────
+// Player chọn hướng building → bắt đầu tiếp cận.
+// Tốn 1 AP, noise +1, lưu state.approaching.
+// Chưa teleport player — player vẫn đứng chỗ cũ.
+function DW_approach(state, dx, dy) {
+  const nx = state.x + dx, ny = state.y + dy;
+  if (nx < 0 || ny < 0 || nx >= DW_WORLD_SIZE || ny >= DW_WORLD_SIZE)
+    return { state, msg: 'Không thể đi ra ngoài bản đồ.', ok: false };
+
+  // Không thể approach nếu đang có approach khác chưa xong
+  if (state.approaching)
+    return { state, msg: 'Bạn đang ở trước cửa rồi. Vào hoặc quay lại.', ok: false };
+
+  const AP_APPROACH = 1;
+  if (state.ap < AP_APPROACH)
+    return { state, msg: `Cần ${AP_APPROACH} ĐHĐ để tiếp cận.`, ok: false };
+
+  const tile     = state.tiles[`${nx},${ny}`];
+  const tileName = tile?.name || 'tòa nhà';
+
+  // Roll encounter nhẹ trên đường tiếp cận (zombie chặn, xe đổ, xác chết)
+  const encounterRoll = Math.random();
+  let encounterMsg = '';
+  if (encounterRoll < 0.15) {
+    encounterMsg = ' 🧟 Có tiếng động phía trước — cẩn thận khi vào.';
+  } else if (encounterRoll < 0.25) {
+    encounterMsg = ' 🚗 Xe đổ chắn lối — mất thêm thời gian.';
+  } else if (encounterRoll < 0.35) {
+    encounterMsg = ' ☠️ Xác chết trên đường — đừng gây ồn.';
+  }
+
+  const s = {
+    ...state,
+    ap:    state.ap - AP_APPROACH,
+    noise: Math.min(10, (state.noise || 0) + 1), // tiếp cận gây noise
+    approaching: { targetX: nx, targetY: ny },
+    log: [
+      `🚶 Tiếp cận ${tileName}... Bạn đang băng qua con đường.${encounterMsg}`,
+      ...(state.log || []),
+    ],
+  };
+
+  return {
+    state: s,
+    msg:        `Đang tiếp cận ${tileName}.`,
+    ok:         true,
+    approaching: true,  // UI dùng flag này để render menu Enter / Quan sát / Quay lại
+  };
+}
+
+// ── ENTER APPROACHED (bước 2 — vào building) ─────────
+// Gọi sau DW_approach() khi player chọn "Vào".
+// Tốn 1 AP, thực sự teleport player vào tile.
+function DW_enterApproached(state) {
+  if (!state.approaching)
+    return { state, msg: 'Không có tòa nhà nào đang tiếp cận.', ok: false };
+
+  const AP_ENTER = 1;
+  if (state.ap < AP_ENTER)
+    return { state, msg: `Cần ${AP_ENTER} ĐHĐ để vào trong.`, ok: false };
+
+  const { targetX, targetY } = state.approaching;
+  const tile     = state.tiles[`${targetX},${targetY}`];
+  const tileName = tile?.name || 'tòa nhà';
+
+  // Teleport player + chạy world tick
+  let s = { ...state, x: targetX, y: targetY, approaching: null };
+  s = _DW_worldTick(s, targetX, targetY, AP_ENTER);
+  s = { ...s, log: [`🚪 Bạn đứng trước cửa ${tileName}. Bên trong tối và im lặng.`, ...(s.log || [])] };
+
+  return {
+    state: s,
+    msg:       `Vào ${tileName}.`,
+    ok:        true,
+    firstVisit: !state.exploredTiles.includes(`${targetX},${targetY}`),
+  };
+}
+
+// ── RETREAT FROM APPROACH ─────────────────────────────
+// Player chọn "Quay lại" khi đang approaching — không tốn AP.
+function DW_retreatApproach(state) {
+  if (!state.approaching)
+    return { state, msg: 'Không có gì để quay lại.', ok: false };
+
+  const s = {
+    ...state,
+    approaching: null,
+    log: ['↩️ Bạn quyết định không vào.', ...(state.log || [])],
+  };
+  return { state: s, msg: 'Quay lại.', ok: true };
+}
+
+// ══════════════════════════════════════════════════════
+// RUMOR SYSTEM
+// ══════════════════════════════════════════════════════
+
+// Trả về weight bảng outcome theo ngày — early game ít trap hơn
+function DW_getRumorOutcomeWeights(day) {
+  if (day <= 3)  return [{id:'loot',w:55},{id:'bandit',w:20},{id:'zombie',w:15},{id:'empty',w:10}];
+  if (day <= 7)  return [{id:'loot',w:45},{id:'bandit',w:30},{id:'zombie',w:15},{id:'empty',w:10}];
+  return             [{id:'loot',w:35},{id:'bandit',w:40},{id:'zombie',w:15},{id:'empty',w:10}];
+}
+
+// Tìm tile đích cho rumor — ưu tiên KEY_LOCATIONS khớp targetSpecial
+function DW_findRumorTarget(state, rumor) {
+  const keyLocs = KEY_LOCATIONS.filter(kl =>
+    rumor.targetSpecial ? kl.special === rumor.targetSpecial : kl.special === null
+  );
+  if (!keyLocs.length) return null;
+  // Pick ngẫu nhiên trong danh sách khớp
+  const kl = keyLocs[Math.floor(Math.random() * keyLocs.length)];
+  return { x: DW_SPAWN_X + kl.dx, y: DW_SPAWN_Y + kl.dy, name: kl.name, type: kl.type };
+}
+
+// Sinh rumor mới — gọi khi ngủ hoặc dùng radio
+// Không sinh nếu đã có activeRumor chưa resolve
+function DW_generateRumor(state) {
+  if (state.activeRumor) return { state, msg: 'Bạn vẫn còn một tin đồn chưa kiểm chứng.', ok: false };
+
+  // Roll rumor từ pool — tránh repeat gần đây
+  const history = (state.rumorHistory || []).map(r => r.id);
+  const pool    = RUMOR_POOL.filter(r => !history.slice(-3).includes(r.id));
+  if (!pool.length) return { state, msg: 'Không có tin tức mới.', ok: false };
+
+  const rumor  = pool[Math.floor(Math.random() * pool.length)];
+  const target = DW_findRumorTarget(state, rumor);
+  if (!target) return { state, msg: 'Không xác định được địa điểm.', ok: false };
+
+  // Roll outcome ngay lúc generate — ẩn khỏi player, lưu trong state
+  const weights = DW_getRumorOutcomeWeights(state.day);
+  const outcome = weightedPick(weights, Math.random.bind(Math)).id;
+
+  // Rare twist: 10% chance nếu outcome là trap/bandit → zombie đã xử lý bandit
+  const rareTwist = (outcome === 'bandit') && Math.random() < 0.10;
+
+  const activeRumor = {
+    id:        rumor.id,
+    text:      rumor.text,
+    source:    rumor.source,
+    targetX:   target.x,
+    targetY:   target.y,
+    targetName:target.name,
+    baitIcon:  rumor.baitIcon,
+    lootItems: rumor.lootItems,
+    stashDesc: rumor.stashDesc,
+    outcome,      // 'loot'|'bandit'|'zombie'|'empty' — ẩn với player
+    rareTwist,    // true = bandit đã chết trước khi player đến
+    phase: null,  // null → 'warning' → 'decision' → 'resolved'
+  };
+
+  const s = {
+    ...state,
+    activeRumor,
+    log: [`${rumor.text}`, ...(state.log||[])],
+  };
+  return { state: s, msg: rumor.text, ok: true };
+}
+
+// Kiểm tra khi player bước vào tile — có trigger rumor không?
+// Trả về { state, triggered: bool, encounter?: object }
+function DW_checkRumorTrigger(state) {
+  const rumor = state.activeRumor;
+  if (!rumor || rumor.phase) return { state, triggered: false }; // đã xử lý hoặc không có
+
+  const tileKey = `${state.x},${state.y}`;
+  const tile    = state.tiles[tileKey];
+
+  // Chỉ trigger tại tile đích
+  if (state.x !== rumor.targetX || state.y !== rumor.targetY)
+    return { state, triggered: false };
+
+  // One-time: tile đã resolved thì bỏ qua
+  if (tile?.rumorResolved) {
+    const s = { ...state, activeRumor: null };
+    return { state: s, triggered: false };
+  }
+
+  // Perception check — sneak + mental vs DC tùy outcome
+  const roll        = Math.floor(Math.random() * 20) + 1;
+  const skillBonus  = (state.skills?.sneak || 0) + (state.skills?.mental || 0);
+  const banditCount = DW_getRumorBanditCount(state.day, state.banditRep || 0);
+  const dc          = rumor.outcome === 'bandit' ? 10 + banditCount : 10;
+  const perceptionPass = (roll + skillBonus) >= dc;
+
+  // Đánh dấu phase warning — bắt đầu encounter flow
+  const updatedRumor = { ...rumor, phase: 'warning', perceptionPass, banditCount };
+  let s = { ...state, activeRumor: updatedRumor };
+
+  // Build warning message
+  let warningMsg = '';
+  if (rumor.rareTwist) {
+    // Rare twist: reveal ngay trước decision
+    warningMsg = `☠️ Bạn bước vào ${tile?.name}. Có mùi máu. Vài tên cướp nằm chết — zombie đã ở đây trước bạn. Loot tự do, nhưng cẩn thận...`;
+    s = { ...s, log: [warningMsg, ...(s.log||[])] };
+    return { state: s, triggered: true, rareTwist: true, encounter: updatedRumor };
+  }
+
+  if (rumor.outcome === 'loot') {
+    warningMsg = `📦 Bạn đến ${tile?.name}. Thấy ${rumor.baitIcon} ${rumor.stashDesc}`;
+  } else if (rumor.outcome === 'empty') {
+    warningMsg = `💨 Bạn đến ${tile?.name}. Nơi đây trống rỗng — ai đó đã lấy đi trước rồi.`;
+  } else if (rumor.outcome === 'zombie') {
+    warningMsg = `🧟 Bạn đến ${tile?.name}. Thấy ${rumor.baitIcon}... nhưng có tiếng gầm gừ từ trong bóng tối.`;
+  } else if (rumor.outcome === 'bandit') {
+    if (perceptionPass) {
+      warningMsg = `⚠️ Bạn đến ${tile?.name}. Thấy ${rumor.baitIcon} ${rumor.stashDesc} — nhưng bạn ngửi thấy mùi thuốc lá và nghe tiếng thở nhẹ. Đây là bẫy.`;
+    } else {
+      warningMsg = `📦 Bạn đến ${tile?.name}. Thấy ${rumor.baitIcon} ${rumor.stashDesc}`;
+    }
+  }
+
+  s = { ...s, log: [warningMsg, ...(s.log||[])] };
+  return { state: s, triggered: true, encounter: updatedRumor, warningMsg };
+}
+
+// Resolve encounter sau khi player chọn hành động (decision phase)
+// action: 'loot'|'retreat'|'stealth'|'fight'|'throw'
+function DW_resolveRumorEncounter(state, action) {
+  const rumor = state.activeRumor;
+  if (!rumor) return { state, msg: 'Không có encounter.', ok: false };
+
+  const tileKey = `${state.x},${state.y}`;
+  const tile    = state.tiles[tileKey];
+
+  // AP cost theo action
+  const apCosts = { retreat:1, stealth:2, fight:2, throw:1, loot:1 };
+  const apCost  = apCosts[action] || 1;
+  if (state.ap < apCost) return { state, msg: `Cần ${apCost} ĐHĐ.`, ok: false };
+
+  let s    = { ...state, ap: state.ap - apCost };
+  let msg  = '';
+  let banditEncounter = null; // trả về UI để trigger DW_fightBandit nếu cần
+
+  // ── RARE TWIST: loot cả hai ──────────────────────────
+  if (rumor.rareTwist) {
+    const gained = rumor.lootItems || [];
+    s.inventory  = [...s.inventory, ...gained];
+    // Thêm 1-2 zombie vào tile (đã ở đó rồi, không vô lý)
+    const newObjs = [
+      ...(tile?.objects || []),
+      { type:'zombie', id:`rumor_z1_${tileKey}`, searched:false },
+    ];
+    s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), objects: newObjs, rumorResolved: true } };
+    msg = `💀 Loot bandit + kho: ${gained.map(DW_itemName).join(', ')}. Nhưng có zombie bên trong!`;
+    s = DW_resolveRumorCleanup(s, 'twist');
+    return { state: s, msg, ok: true };
+  }
+
+  const outcome = rumor.outcome;
+
+  // ── LOOT outcome ─────────────────────────────────────
+  if (outcome === 'loot') {
+    if (action === 'loot' || action === 'fight' || action === 'stealth') {
+      const gained = rumor.lootItems || [];
+      s.inventory  = [...s.inventory, ...gained];
+      msg = `✅ Tin đồn đúng! Loot: ${gained.map(DW_itemName).join(', ')}.`;
+    } else {
+      msg = '🏃 Bạn rút lui. Bỏ lỡ loot thật sự.';
+    }
+    s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), rumorResolved: true } };
+    s = DW_resolveRumorCleanup(s, outcome);
+    return { state: s, msg, ok: true };
+  }
+
+  // ── EMPTY outcome ────────────────────────────────────
+  if (outcome === 'empty') {
+    msg = '💨 Không có gì. Tin đồn sai rồi — hay ai đó đã đến trước.';
+    s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), rumorResolved: true } };
+    s = DW_resolveRumorCleanup(s, outcome);
+    return { state: s, msg, ok: true };
+  }
+
+  // ── ZOMBIE outcome ────────────────────────────────────
+  if (outcome === 'zombie') {
+    if (action === 'retreat') {
+      msg = '🏃 Bạn rút lui ngay trước khi zombie phát hiện. An toàn.';
+      s = DW_resolveRumorCleanup(s, 'retreat');
+    } else {
+      // Spawn thêm zombie_horde vào tile
+      const newObjs = [
+        ...(tile?.objects || []),
+        { type:'zombie_horde', id:`rumor_horde_${tileKey}`, searched:false },
+        { type:'zombie',       id:`rumor_z2_${tileKey}`,    searched:false },
+      ];
+      s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), objects: newObjs, rumorResolved: true } };
+      msg = '🧟 Tin đồn là bẫy zombie! Một bầy đang đổ ra!';
+      s = DW_resolveRumorCleanup(s, outcome);
+    }
+    return { state: s, msg, ok: true };
+  }
+
+  // ── BANDIT outcome ────────────────────────────────────
+  if (outcome === 'bandit') {
+    const banditCount = rumor.banditCount || 1;
+    const bandits     = DW_spawnBandits(state.day, state.banditRep || 0, banditCount);
+
+    if (action === 'retreat') {
+      msg = '🏃 Bạn rút lui. Không loot, không chạm trán.';
+      s = DW_resolveRumorCleanup(s, 'retreat');
+      s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), rumorResolved: true } };
+      return { state: s, msg, ok: true };
+    }
+
+    if (action === 'throw') {
+      // Cần throwable item
+      const throwIdx = s.inventory.findIndex(id => DW_itemHasTag(id, 'throwable'));
+      if (throwIdx === -1) {
+        msg = '❌ Không có vật để ném. Buộc phải chiến đấu!';
+        // Fall through → fight
+      } else {
+        const thrownId = s.inventory[throwIdx];
+        s.inventory = s.inventory.filter((_,i) => i !== throwIdx);
+        s.noise = Math.min(10, (s.noise||0) + 5);
+        msg = `🪨 Ném ${DW_itemName(thrownId)} — bandit mất tập trung 1 lượt! Tấn công ngay.`;
+        // Trả về bandit encounter với lợi thế
+        s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), rumorResolved: true } };
+        s = { ...s, activeRumor: { ...rumor, phase: 'resolved', lootItems: rumor.lootItems } };
+        return { state: s, msg, ok: true, banditEncounter: { bandits, advantage: true, loot: rumor.lootItems } };
+      }
+    }
+
+    // fight hoặc stealth → trả encounter về UI
+    const advantage = action === 'stealth' && (rumor.perceptionPass);
+    s.tiles = { ...s.tiles, [tileKey]: { ...(tile||{}), rumorResolved: true } };
+    s = { ...s, activeRumor: { ...rumor, phase: 'resolved', lootItems: rumor.lootItems } };
+    msg = advantage
+      ? `🥷 Bạn tiếp cận từ phía sau. Lợi thế tấn công! Chạm trán ${bandits.length} tên cướp.`
+      : `⚔️ Chạm trán ${bandits.length} tên cướp — ${bandits.map(b=>b.name).join(', ')}!`;
+    return { state: s, msg, ok: true, banditEncounter: { bandits, advantage, loot: rumor.lootItems } };
+  }
+
+  return { state: s, msg: 'Không xác định outcome.', ok: false };
+}
+
+// Helper: dọn dẹp activeRumor sau khi resolve
+function DW_resolveRumorCleanup(state, outcome) {
+  const rumor   = state.activeRumor;
+  const history = [...(state.rumorHistory||[]), { id: rumor?.id, outcome, day: state.day }];
+  return { ...state, activeRumor: null, rumorHistory: history };
+}
+
+// Helper: tính số bandit theo ngày & rep
+function DW_getRumorBanditCount(day, banditRep) {
+  if (banditRep >= 6 || day >= 8) return 2 + Math.floor(Math.random() * 2); // 2-3
+  if (banditRep >= 3 || day >= 4) return 1 + Math.floor(Math.random() * 2); // 1-2
+  return 1;
+}
+
+// Helper: build danh sách bandit objects để trả về UI
+function DW_spawnBandits(day, banditRep, count) {
+  // Chọn tier bandit theo ngày & rep
+  let tier = 'bandit_scout';
+  if (banditRep >= 6 || day >= 8) tier = Math.random() < 0.5 ? 'bandit_heavy' : 'bandit_leader';
+  else if (banditRep >= 3 || day >= 4) tier = 'bandit_raider';
+
+  const def = BANDIT_DEFS[tier];
+  return Array.from({ length: count }, (_, i) => ({
+    ...def,
+    hp: def.maxHp, // fresh HP
+    id: `bandit_${tier}_${Date.now()}_${i}`,
+    // Gán personality 1 lần khi spawn — engine-combat.js đọc để dispatch behavior
+    personality: DW_assignBanditPersonality(tier),
+  }));
+}
+
+// ══════════════════════════════════════════════════════
+// NOISE TICK — zombie migration khi tile quá ồn
+// Gọi từ DW_move() sau mỗi lần di chuyển
+// ══════════════════════════════════════════════════════
+function DW_tickNoise(state) {
+  const tileKey = `${state.x},${state.y}`;
+  const tile    = state.tiles[tileKey];
+  if (!tile) return state;
+
+  const tileLvl = Math.max(tile.noiseLvl || 0, state.noise || 0);
+  let s = { ...state, tiles: { ...state.tiles, [tileKey]: { ...tile, noiseLvl: tileLvl } } };
+
+  if (tileLvl < 5) return s;
+
+  const NATURE_TILE_TYPES = new Set(['forest','field','plain','hill','beach']);
+  const isNatureTile = NATURE_TILE_TYPES.has(tile.type);
+
+  // ── Farmer: nature_guardian (mot_voi_thien_nhien lv10) ──
+  // Zombie không chủ động vào tile rừng khi player đang ở đó.
+  // Chú ý: không chặn hoàn toàn — boss và tile đã có zombie vẫn hoạt động bình thường.
+  const hasNatureGuardian = state.job === 'farmer' && isNatureTile &&
+    DW_getSkillEffect(state, 'mot_voi_thien_nhien', 'nature_guardian');
+  if (hasNatureGuardian) {
+    // Không spawn zombie mới vào tile hiện tại, nhưng tiếng ồn vẫn lan ra
+    s.tiles = { ...s.tiles, [tileKey]: { ...s.tiles[tileKey], noiseLvl: Math.max(0, tileLvl - 1) } };
+    return s;
+  }
+
+  const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+  const rng  = Math.random;
+  for (const [dx,dy] of dirs) {
+    const nx = state.x + dx, ny = state.y + dy;
+    if (nx < 0 || ny < 0 || nx >= DW_WORLD_SIZE || ny >= DW_WORLD_SIZE) continue;
+    const nk    = `${nx},${ny}`;
+    const ntile = s.tiles[nk];
+    if (!ntile?.explored) continue;
+    if (rng() > 0.35) continue;
+
+    // ── Farmer: home_ground (lanh_tho_quen_thuoc lv5) ──
+    // Tile đã đến 3+ lần: zombie không spawn thêm ban ngày
+    const visitCount = state.tileVisits?.[nk] || 0;
+    const hasHomeGround = state.job === 'farmer' && visitCount >= 3 &&
+      DW_getSkillEffect(state, 'lanh_tho_quen_thuoc', 'home_ground');
+    const isDay = state.hour >= 6 && state.hour < 20;
+    if (hasHomeGround && isDay) continue; // block zombie spawn vào "nhà" ban ngày
+
+    const newObjs = [...(ntile.objects||[]),
+      { type:'zombie_fast', id:`noise_z_${nk}_${Date.now()}`, searched:false }];
+    s.tiles = { ...s.tiles, [nk]: { ...ntile, objects: newObjs, noiseLvl: Math.max(0, tileLvl - 2) } };
+  }
+
+  s.tiles = { ...s.tiles, [tileKey]: { ...s.tiles[tileKey], noiseLvl: Math.max(0, tileLvl - 1) } };
+  return s;
+}
+
+// ══════════════════════════════════════════════════════
+// MECHANIC: DEFENDED ZONE SYSTEM
+// defended_zone_unlock (phao_dai_song lv1) → DW_setupDefendedZone
+// Defended zone: tile có nhiều lớp barricade, kill zone bonus, alarm.
+// state.defendedZones = { 'x,y': { layers, killZone, alarm, active } }
+// ══════════════════════════════════════════════════════
+function DW_setupDefendedZone(state) {
+  if (state.job !== 'mechanic')
+    return { state, msg: 'Chỉ Thợ Máy mới có thể lập Defended Zone.', ok: false };
+
+  const unlock = DW_getSkillEffect(state, 'phao_dai_song', 'defended_zone_unlock');
+  if (!unlock)
+    return { state, msg: 'Cần kỹ năng Pháo Đài Sống để lập Defended Zone.', ok: false };
+
+  const tileKey  = `${state.x},${state.y}`;
+  const tile     = state.tiles?.[tileKey];
+  if (!tile)
+    return { state, msg: 'Không có tile hợp lệ.', ok: false };
+
+  // Cần barricade lv2+ để setup defended zone
+  if ((tile.barricade || 0) < 2)
+    return { state, msg: 'Cần barricade lv2+ để lập Defended Zone.', ok: false };
+
+  const AP_COST = 3;
+  if (state.ap < AP_COST)
+    return { state, msg: `Cần ${AP_COST} ĐHĐ để lập Defended Zone.`, ok: false };
+
+  const skillLv = state.skills?.['phao_dai_song'] || 0;
+  const trapBonus  = DW_getSkillEffect(state, 'phao_dai_song', 'zone_trap_bonus') || 0;
+  const hasAlarm   = !!DW_getSkillEffect(state, 'phao_dai_song', 'zone_alarm');
+  const hasKillZone= !!DW_getSkillEffect(state, 'phao_dai_song', 'kill_zone');
+  const hasChoke   = !!DW_getSkillEffect(state, 'phao_dai_song', 'choke_point');
+  const hasBunker  = !!DW_getSkillEffect(state, 'phao_dai_song', 'bunker');
+
+  // Fortify bonus từ ky_su_chien_truong
+  const fortifyBonus = DW_getSkillEffect(state, 'ky_su_chien_truong', 'fortify_bonus') || 0;
+
+  const zone = {
+    layers:      2,            // 2 lớp barricade thay vì 1 (phao_dai_song lv1)
+    trapBonus,                 // trap damage +%
+    alarm: hasAlarm,           // cảnh báo khi lớp đầu bị phá
+    killZone: hasKillZone,     // zombie nhận +2 damage/lượt
+    choke: hasChoke,           // zombie chỉ vào từ 1 hướng
+    bunker: hasBunker,         // không thể bị phá hoàn toàn trong 1 đêm
+    fortifyBonus,              // % damage reduction khi phòng thủ
+    active: true,
+    builtDay: state.day,
+  };
+
+  let s = {
+    ...state,
+    ap: state.ap - AP_COST,
+    defendedZones: { ...(state.defendedZones || {}), [tileKey]: zone },
+  };
+
+  // Synergy: iron_endurance — trong defended zone, equipment không mất durability
+  const hasSynergy = DW_hasSynergy(state, 'iron_endurance');
+
+  const msgs = [`🏰 Defended Zone thiết lập! Lớp phòng thủ: ${zone.layers}.`];
+  if (hasAlarm)    msgs.push('🚨 Alarm kích hoạt.');
+  if (hasKillZone) msgs.push('💀 Kill Zone: zombie nhận +2 damage/lượt.');
+  if (hasBunker)   msgs.push('🛡️ Bunker: không thể bị phá hoàn toàn trong 1 đêm.');
+  if (hasSynergy)  msgs.push('⚙️ Iron Endurance: trang bị không hao mòn trong zone này.');
+
+  s.log = [msgs.join(' '), ...(s.log||[])];
+  s = DW_checkMilestone(s, 'mechanic_homebuilder');
+
+  return { state: s, msg: msgs[0], ok: true, zone };
+}
+
+// ── DW_getDefendedZone ────────────────────────────────
+// Query helper — UI/combat dùng để check xem tile hiện tại có defended zone không.
+function DW_getDefendedZone(state, x, y) {
+  const tk = x != null ? `${x},${y}` : `${state.x},${state.y}`;
+  return state.defendedZones?.[tk] || null;
+}
