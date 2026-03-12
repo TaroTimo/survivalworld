@@ -96,8 +96,28 @@ function DW_fight(state, objId, opts={}) {
     }
   }
 
-  if (state.ap < apCost + extraAp)
-    return { state, msg: `Cần ${apCost+extraAp} ĐHĐ. Bạn còn ${state.ap}.`, ok: false };
+  // ── STAMINA SYSTEM ─────────────────────────────────
+  // Combat tốn STAMINA (sức bền ngắn hạn), KHÔNG tốn AP (ngân sách ngày).
+  // AP chỉ bị tốn trong combat nếu player chủ động "heavy attack" (opts.heavy).
+  // fightAp từ data được dùng làm STAMINA cost.
+  // Ý nghĩa: chiến đấu luôn khả thi về AP, nhưng bị giới hạn bởi thể lực tức thời.
+  const stmCost  = apCost + extraAp; // tái dùng fightAp làm STM cost (giá trị hợp lý)
+  const curStm   = state.stamina ?? DW_staminaMax(state);
+
+  // Nếu hết stamina: không thể tấn công (thông báo rõ ràng)
+  if (curStm < stmCost)
+    return {
+      state,
+      msg: `😮‍💨 Hết sức! Cần ${stmCost} SB (còn ${curStm}). Nghỉ để hồi sức — zombie sẽ tiếp tục tấn công!`,
+      ok: false,
+      staminaExhausted: true,
+    };
+
+  // AP chỉ tốn 1 cho HEAVY ATTACK (hành động chủ ý tốn sức), không tốn cho đòn thường.
+  // Lý do: heavy attack là kỹ thuật — cần cả thể lực VÀ hành động có chủ đích.
+  const apSpend = opts.heavy ? 1 : 0;
+  if (apSpend > 0 && state.ap < apSpend)
+    return { state, msg: `Cần ${apSpend} ĐHĐ cho đòn mạnh.`, ok: false };
 
   const roll  = DW_rollD20();
   const enemy = boss ? BOSS_DEFS[boss.id] : OBJECT_DEFS[obj.type];
@@ -122,7 +142,11 @@ function DW_fight(state, objId, opts={}) {
   const total = roll + hitBonus;
   const hit   = total >= dc;
 
-  let s = { ...state, ap: state.ap - apCost - extraAp };
+  let s = {
+    ...state,
+    ap:      Math.max(0, state.ap - apSpend),
+    stamina: Math.max(0, curStm - stmCost),
+  };
 
   // Mechanic: pre_combat_check (bao_tri_dinh_ky lv7) — boost +5 durability lần đầu mỗi ngày
   if (state.job === 'mechanic' && !state.preCombatCheckDone &&
@@ -164,8 +188,22 @@ function DW_fight(state, objId, opts={}) {
     if (noiseReduce > 0) s.noise = Math.max(0, s.noise - noiseReduce);
   }
 
-  // Miss
+  // ── MISS — Turn-based redesign: không mất HP ngay ────
+  // HP chỉ mất khi player bấm "Nghỉ" (Threat Round).
+  // Miss = zombie áp sát, tích lũy pressure → incentive đánh nhanh hơn.
   if (!hit) {
+    s.threatPressure = (s.threatPressure || 0) + 1;
+    s = DW_grantXp(s, weapDef?.type === 'blade' ? 'blade'
+                    : weapDef?.type === 'blunt'  ? 'blunt' : 'fitness', 1);
+    return {
+      state: s,
+      msg: `🎲 ${roll}+${hitBonus}=${total} vs DC${dc} — Trượt! Zombie áp sát (${s.threatPressure}). Nghỉ → zombie phản công.`,
+      roll, dc, hit: false, dmgTaken: 0, ok: true,
+    };
+  }
+
+  // ── DEAD CODE BELOW — kept as reference, never reached ──
+  if (false) {
     const dmgIn  = (boss ? BOSS_DEFS[boss.id]?.damage : enemy?.damage) || 1;
     let netDmg = Math.max(0, dmgIn - DW_getArmorBonus(s));
 
@@ -287,7 +325,7 @@ function DW_fight(state, objId, opts={}) {
       msg: `🎲 ${roll}+${hitBonus}=${total} vs DC${dc} — Trượt! Nhận ${netDmg} sát thương.`,
       roll, dc, hit: false, dmgTaken: netDmg, ok: true,
     };
-  }
+  } // end if(false) dead code block
 
   // Hit — damage calculation
   let dmgOut = (weapDef?.baseDmg || 1) + weapSkill * 0.5 + (state.job === 'soldier' ? 1 : 0);
@@ -450,12 +488,13 @@ function DW_fight(state, objId, opts={}) {
     }
   }
 
-  // Police: xa_thu_canh_sat — rapid_clear: 30% hồi 1 AP sau khi giết bằng súng
+  // Police: xa_thu_canh_sat — rapid_clear: 30% hồi 1 STAMINA sau khi giết bằng súng
   if (s.job === 'police' && weapDef?.type === 'firearm' &&
       DW_getSkillEffect(s, 'xa_thu_canh_sat', 'rapid_clear') &&
       Math.random() < 0.30) {
-    s.ap = Math.min(DW_apMax(s), s.ap + 1);
-    s.log = [`⚡ Rapid Clear: +1 AP`, ...(s.log||[])];
+    const maxStm = DW_staminaMax(s);
+    s.stamina = Math.min(maxStm, (s.stamina ?? maxStm) + 1);
+    s.log = [`⚡ Rapid Clear: +1 SB`, ...(s.log||[])];
   }
 
   // Police: synergy police_deterrence — kill_stress_recover: giảm 2 stress mỗi kill
@@ -750,6 +789,9 @@ function DW_flee(state, objId) {
   }
 
   s._combatExhaustionFlag = false;
+  // Flee thành công: hồi một phần stamina (thoát khỏi áp lực chiến đấu)
+  const maxStmFlee = DW_staminaMax(s);
+  s.stamina = Math.min(maxStmFlee, (s.stamina ?? 0) + 3);
   return { state: s, msg: `Thoát thành công!`, ok: true };
 }
 
@@ -1292,7 +1334,170 @@ function DW_siegebreaker(state) {
   return { state: s, msg: `Siegebreaker: ${totalDmg} damage tổng cộng.`, ok: true, totalDmg };
 }
 
-// ── DW_engineerAura ───────────────────────────────────
+// ── DW_threatRound ────────────────────────────────────
+// Gọi khi player bấm "Nghỉ" trong khi có zombie — tất cả zombie sống
+// trong tile tấn công cùng lúc. HP giảm thật, sync với world state.
+//
+// Thiết kế:
+//   • Mỗi zombie còn sống đóng góp damage.damage của nó
+//   • Áp dụng toàn bộ skill giảm damage (armor, mechanic, nurse, police)
+//   • Barricade giảm thêm 30% damage tổng (an toàn hơn khi đứng sau barricade)
+//   • threatPressure reset về 0 sau mỗi round
+//   • STM hồi 60% maxStamina sau khi chịu đòn (player thở lại)
+//
+// Return: { ok, state, totalDmg, zombieCount, msg }
+function DW_threatRound(state) {
+  const tileKey = `${state.x},${state.y}`;
+  const tile    = state.tiles?.[tileKey];
+
+  // Thu thập tất cả zombie còn sống trong tile
+  const liveEnemies = (tile?.objects || []).filter(
+    o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false && (o.hp == null || o.hp > 0)
+  );
+
+  // Boss cũng tấn công nếu có
+  const boss = state.activeBosses?.[tileKey];
+
+  if (liveEnemies.length === 0 && !boss) {
+    // Không có zombie → nghỉ an toàn, hồi STM đầy
+    const maxStm = DW_staminaMax(state);
+    let s = {
+      ...state,
+      stamina: maxStm,
+      maxStamina: maxStm,
+      threatPressure: 0,
+    };
+    s.log = ['😮‍💨 Nghỉ an toàn — SB hồi đầy.', ...(s.log || [])];
+    return { ok: true, state: s, totalDmg: 0, zombieCount: 0, msg: 'Nghỉ an toàn.' };
+  }
+
+  // ── Tính tổng base damage từ tất cả zombie ─────────
+  let baseDmg = 0;
+  for (const en of liveEnemies) {
+    const def = OBJECT_DEFS[en.type] || {};
+    baseDmg += (def.damage || 1);
+  }
+  if (boss) {
+    baseDmg += (BOSS_DEFS[boss.id]?.damage || 3);
+  }
+
+  let netDmg = baseDmg;
+
+  // ── Armor giảm damage ───────────────────────────────
+  netDmg = Math.max(0, netDmg - DW_getArmorBonus(state));
+
+  // ── Barricade giảm 30% ──────────────────────────────
+  const bLvl = tile?.barricade || 0;
+  if (bLvl >= 1) netDmg = Math.max(0, Math.ceil(netDmg * 0.70));
+
+  // ── Mechanic: reactive_armor ────────────────────────
+  if (state.job === 'mechanic' && DW_getSkillEffect(state, 'lop_giap_tuy_chinh', 'reactive_armor')) {
+    const threshold = DW_getSkillEffect(state, 'lop_giap_tuy_chinh', 'reactive_armor_threshold') || 5;
+    const reduce    = DW_getSkillEffect(state, 'lop_giap_tuy_chinh', 'reactive_armor_reduce')    || 2;
+    if (netDmg >= threshold) netDmg = Math.max(0, netDmg - reduce);
+  }
+  if (state.job === 'mechanic' && !boss && DW_getSkillEffect(state, 'lop_giap_tuy_chinh', 'fortress_body')) {
+    netDmg = Math.max(0, netDmg - 3);
+  }
+  if (state.job === 'mechanic') {
+    const zone = typeof DW_getDefendedZone === 'function' ? DW_getDefendedZone(state) : null;
+    if (zone?.active) {
+      const fortify = DW_getSkillEffect(state, 'ky_su_chien_truong', 'fortify_bonus') || 0;
+      if (fortify > 0) netDmg = Math.max(0, Math.ceil(netDmg * (1 - fortify)));
+    }
+  }
+
+  // ── Nurse: emergency_defense khi HP thấp ────────────
+  if (state.job === 'nurse') {
+    const hpRatio = state.hp / (state.maxHp || 20);
+    if (hpRatio < 0.20) {
+      const eDef = DW_getSkillEffect(state, 'chuyen_gia_cap_cuu', 'emergency_defense') || 0;
+      if (eDef > 0) netDmg = Math.max(0, Math.ceil(netDmg * (1 - eDef)));
+    }
+  }
+
+  // ── Police: barricade damage reduce ─────────────────
+  if (state.job === 'police') {
+    if (bLvl >= 2) {
+      const shieldBonus = DW_getSkillEffect(state, 'che_chan_dong_doi', 'protect_incoming') || 0;
+      if (shieldBonus > 0) netDmg = Math.max(0, Math.ceil(netDmg * (1 - shieldBonus)));
+    }
+    if (bLvl >= 1) {
+      const coverDef = DW_getSkillEffect(state, 'ban_tu_yem_the', 'cover_damage_reduce') || 0;
+      if (coverDef > 0) netDmg = Math.max(0, Math.ceil(netDmg * (1 - coverDef)));
+    }
+    const hpRatioP = state.hp / (state.maxHp || 15);
+    if (hpRatioP < 0.30 && DW_getSkillEffect(state, 'che_chan_dong_doi', 'last_stand_defense')) {
+      netDmg = Math.max(0, Math.ceil(netDmg * 0.80));
+    }
+    if (hpRatioP < 0.15 && DW_getSkillEffect(state, 'bat_khuat', 'endure')) {
+      netDmg = Math.max(0, Math.ceil(netDmg * 0.50));
+    }
+  }
+
+  netDmg = Math.ceil(netDmg);
+  const zombieCount = liveEnemies.length + (boss ? 1 : 0);
+
+  // ── Áp dụng damage ──────────────────────────────────
+  let s = { ...state, hp: Math.max(0, state.hp - netDmg), threatPressure: 0 };
+
+  // ── Hồi 60% STM sau khi chịu đòn (thở lại) ─────────
+  const maxStm = DW_staminaMax(s);
+  s.stamina    = Math.min(maxStm, Math.ceil(maxStm * 0.60));
+  s.maxStamina = maxStm;
+
+  // ── Nurse: emergency_heal sau Threat Round ───────────
+  if (s.job === 'nurse' && !state.emergencyHealUsed) {
+    const hpRatioAfter = s.hp / (s.maxHp || 20);
+    if (hpRatioAfter < 0.20) {
+      const eHeal = DW_getSkillEffect(s, 'chuyen_gia_cap_cuu', 'emergency_heal') || 0;
+      if (eHeal > 0) {
+        s.hp = Math.min(s.maxHp, s.hp + eHeal);
+        s.emergencyHealUsed = true;
+        s.log = [`🚑 Cấp cứu khẩn! +${eHeal} HP`, ...(s.log || [])];
+      }
+    }
+  }
+
+  // ── Nurse: never_die ────────────────────────────────
+  if (s.job === 'nurse' && s.hp <= 0 && !state.neverDieUsed &&
+      DW_getSkillEffect(s, 'chuyen_gia_cap_cuu', 'never_die')) {
+    s.hp = 1; s.neverDieUsed = true; s.gameOver = false;
+    s.log = [`💀 Không Bao Giờ Chết — trụ lại 1 HP!`, ...(s.log || [])];
+  }
+  if (s.job === 'nurse' && s.hp <= 0 && !state.miracleHandsUsed &&
+      DW_hasSignatureSkill(s, 'miracle_hands') &&
+      DW_getSkillEffect(s, 'miracle_hands', 'self_revive_once')) {
+    const reviveHp = DW_getSkillEffect(s, 'miracle_hands', 'self_revive_hp') || 1;
+    s.hp = reviveHp; s.miracleHandsUsed = true; s.gameOver = false;
+    s.log = [`🖐️ Đôi Tay Kỳ Diệu — hồi sinh ${reviveHp} HP!`, ...(s.log || [])];
+  }
+
+  // ── Police: cop_never_dies ───────────────────────────
+  if (s.job === 'police' && s.hp <= 0 && !state.copNeverDiesUsed &&
+      DW_getSkillEffect(s, 'bat_khuat', 'cop_never_dies')) {
+    s.hp = 3; s.copNeverDiesUsed = true; s.gameOver = false;
+    s._copLastShot = true;
+    s.log = [`🚔 Cảnh Sát Không Bao Giờ Ngã — đứng lên 3 HP!`, ...(s.log || [])];
+  }
+
+  if (s.hp <= 0) s.gameOver = true;
+
+  const zombieNames = liveEnemies.map(e => OBJECT_DEFS[e.type]?.label || 'Zombie').join(', ');
+  const bLvlMsg = bLvl >= 1 ? ` (barricade giảm damage)` : '';
+  s.log = [
+    `💥 THREAT ROUND — ${zombieCount} kẻ thù phản công: mất ${netDmg} HP${bLvlMsg}. SB hồi 60%.`,
+    ...(s.log || [])
+  ];
+
+  return {
+    ok: true,
+    state: s,
+    totalDmg: netDmg,
+    zombieCount,
+    msg: `Threat Round: ${zombieCount} zombie — mất ${netDmg} HP. SB hồi lại.`,
+  };
+}
 // Engineer Aura (ky_su_chien_truong lv7): NPC đồng hành trong defended zone
 // nhận giảm 30% damage. Đây là state-flag — UI/NPC combat đọc để áp dụng.
 // Returns aura bonus info, không thay đổi state.
