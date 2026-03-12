@@ -653,6 +653,17 @@ var DWArena = (function () {
         _ctx.textAlign   = 'center';
         _ctx.fillText('MISS', e.x, my);
         _ctx.restore();
+
+      } else if (e.type === 'player_dmg_text') {
+        // Số sát thương player nhận — màu đỏ bay lên
+        var py2 = e.y - progress * 24;
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle   = '#ff3333';
+        _ctx.font        = 'bold 12px "Share Tech Mono",monospace';
+        _ctx.textAlign   = 'center';
+        _ctx.fillText('-' + (e.dmg || '?'), e.x, py2);
+        _ctx.restore();
       }
 
       if (e.life < e.maxLife) survivors.push(e);
@@ -902,11 +913,33 @@ var DWArena = (function () {
     }
   }
 
-  function _updateButtons() {
-    var hasTarget = !!_selectedEnemyObjId;
-    var state     = gs && gs._state;
-    var ap        = state ? (state.ap || 0) : 0;
+  // Helper: select enemy by id and update UI
+  function _selectEnemy(id) {
+    _selectedEnemyObjId = id;
+    _arena.enemies.forEach(function (e) { e.selected = (e.id === id); });
+    _renderEnemyList(_arena.enemies);
+    _updateButtons();
+  }
 
+  function _updateButtons() {
+    var state  = gs && gs._state;
+    var ap     = state ? (state.ap || 0) : 0;
+
+    // Kiểm tra target hợp lệ: có id + enemy đó còn sống trong _arena.enemies
+    var hasTarget = false;
+    if (_selectedEnemyObjId) {
+      for (var i = 0; i < _arena.enemies.length; i++) {
+        var en = _arena.enemies[i];
+        if (en.id === _selectedEnemyObjId && !en.dead && en.hp > 0) {
+          hasTarget = true;
+          break;
+        }
+      }
+      // Nếu target đã chết, xóa selection
+      if (!hasTarget) _selectedEnemyObjId = null;
+    }
+
+    // AP costs tương ứng từng nút
     var btnFight   = document.getElementById('dwa-btn-fight');
     var btnHeavy   = document.getElementById('dwa-btn-heavy');
     var btnStealth = document.getElementById('dwa-btn-stealth');
@@ -916,6 +949,10 @@ var DWArena = (function () {
     if (btnHeavy)   btnHeavy.disabled   = !hasTarget || ap < 4;
     if (btnStealth) btnStealth.disabled = !hasTarget || ap < 3;
     if (btnFlee)    btnFlee.disabled    = ap < 2;
+
+    // Cập nhật AP label trên nút tấn công
+    var fightApLbl = document.getElementById('dwa-btn-fight-ap');
+    if (fightApLbl) fightApLbl.textContent = ap < 3 ? 'Thiếu AP' : '-3 AP';
   }
 
   // Hiển thị log message
@@ -936,7 +973,7 @@ var DWArena = (function () {
 
     _arena.phase = 'player_attack';
 
-    // Tìm enemy trong arena để biết vị trí
+    // Tìm enemy trong arena để lấy vị trí pixel
     var targetArena = null;
     for (var i = 0; i < _arena.enemies.length; i++) {
       if (_arena.enemies[i].id === _selectedEnemyObjId) {
@@ -945,80 +982,107 @@ var DWArena = (function () {
       }
     }
 
-    // ── GỌI ENGINE (pure, không mutation) ─────────────
+    // ── GỌI ENGINE ────────────────────────────────────
     var opts = {};
     if (mode === 'heavy')   opts.heavy   = true;
     if (mode === 'stealth') opts.stealth = true;
 
-    var result = _raw.DW_fight(state, _selectedEnemyObjId, opts);
+    var rawFn = (typeof _raw !== 'undefined' && _raw.DW_fight) ? _raw.DW_fight
+              : (typeof window.DW_fightRaw === 'function') ? window.DW_fightRaw
+              : null;
+    if (!rawFn) { _showLog('⚠ Engine combat unavailable', '#cc2200'); _arena.phase='idle'; return; }
 
-    // Cập nhật global state
+    var result = rawFn(state, _selectedEnemyObjId, opts);
+
+    // Engine trả về: { ok, hit, enemyDead, dmg, enemyHp, enemyMaxHp, dmgTaken, state }
+    // Nếu không đủ AP: ok=false, state=unchanged
+    if (!result.ok) {
+      _showLog(result.msg || 'Không đủ ĐHĐ!', '#cc8800');
+      _arena.phase = 'idle';
+      _updateButtons();
+      return;
+    }
+
+    // Cập nhật global state ngay lập tức
     if (result.state) gs.setState(result.state);
 
-    // ── PLAY ANIMATION DỰA VÀO KẾT QUẢ ─────────────
-    var projType = _getProjectileType(state);
-    var pPos = _playerPixelPos();
+    // ── ĐỌC KẾT QUẢ TRỰC TIẾP TỪ ENGINE ─────────────
+    // KHÔNG parse log text — dùng structured fields từ engine
+    var isHit      = result.hit === true;       // engine set rõ ràng
+    var enemyDead  = result.enemyDead === true;
+    var dmgOut     = result.dmg      || 0;      // sát thương gây cho zombie
+    var dmgTaken   = result.dmgTaken || 0;      // sát thương player nhận (khi miss)
+    var newEnemyHp = result.enemyHp;            // HP zombie sau khi bị thương (undefined nếu chết)
+    var newLog     = (result.state && result.state.log && result.state.log[0]) || result.msg || '';
 
+    // ── ANIMATION PLAYER → ENEMY ──────────────────────
+    var projType = _getProjectileType(state);
+    var pPos     = _playerPixelPos();
     if (targetArena) {
-      // Projectile từ player → enemy
       _spawnProjectile(projType, pPos.px, pPos.py, targetArena.px, targetArena.py);
     }
 
-    // Đọc kết quả từ log để biết hit/miss/damage
-    var newLog  = (result.state && result.state.log) ? result.state.log[0] : (result.msg || '');
-    var isHit   = result.ok && newLog && (
-      newLog.indexOf('gây') >= 0 ||
-      newLog.indexOf('sát thương') >= 0 ||
-      newLog.indexOf('trúng') >= 0 ||
-      newLog.indexOf('hạ') >= 0
-    );
-    var isMiss  = !isHit;
-
-    // Extract damage từ log (tìm số)
-    var dmgMatch = newLog.match(/[+\-]?\d+\s*(?:sát thương|HP|damage|dmg)/i);
-    var dmgNum   = dmgMatch ? parseInt(dmgMatch[0]) : 3;
-    if (isNaN(dmgNum)) dmgNum = 3;
-
     setTimeout(function () {
-      if (targetArena && isHit) {
-        _spawnBlood(targetArena.px, targetArena.py, Math.abs(dmgNum));
-        targetArena.flashTimer = 12;
 
-        // Cập nhật HP của enemy trong arena
-        var tileKey = state.x + ',' + state.y;
-        var newTile = result.state && result.state.tiles && result.state.tiles[tileKey];
-        if (newTile) {
-          var updatedObj = newTile.objects && newTile.objects.find(function (o) {
-            return o.id === _selectedEnemyObjId;
+      if (isHit && targetArena) {
+        // ── HIT: zombie bị trúng ───────────────────────
+        _spawnBlood(targetArena.px, targetArena.py, Math.max(1, Math.round(dmgOut)));
+        targetArena.flashTimer  = 14;
+        targetArena.flashColor  = '#cc2200';
+
+        if (enemyDead) {
+          // Zombie chết
+          targetArena.hp   = 0;
+          targetArena.dead = true;
+          _addEffect('explosion', targetArena.px + 8, targetArena.py + 12, {
+            maxLife: 20, maxR: 22,
           });
-          if (updatedObj) {
-            targetArena.hp = updatedObj.hp || 0;
-          } else {
-            // Không còn trong tile → đã chết
-            targetArena.hp   = 0;
-            targetArena.dead = true;
-            _addEffect('explosion', targetArena.px + 8, targetArena.py + 12, {
-              maxLife: 20, maxR: 22,
-            });
-          }
+        } else {
+          // Zombie bị thương — dùng result.enemyHp trực tiếp, KHÔNG tìm trong tile
+          // result.enemyHp là giá trị chính xác engine vừa tính
+          targetArena.hp    = (newEnemyHp !== undefined) ? newEnemyHp : Math.max(0, targetArena.hp - dmgOut);
+          targetArena.maxHp = result.enemyMaxHp || targetArena.maxHp;
+
+          // Zombie phản công nhỏ (animation lunge về phía player) nhưng MISS (player tránh được)
+          setTimeout(function () {
+            _arena.player.flashTimer = 5;
+            _arena.player.flashColor = 'rgba(192,57,43,0.25)'; // nhạt — zombie gần trúng
+          }, 200);
         }
-      } else if (targetArena && isMiss) {
-        _addEffect('miss_text', targetArena.px + 8, targetArena.py, { maxLife: 25 });
+
+      } else {
+        // ── MISS: player trượt → zombie phản công trúng ──
+        _addEffect('miss_text', targetArena ? targetArena.px + 8 : pPos.px, targetArena ? targetArena.py : pPos.py, { maxLife: 25 });
+
+        // Player nhận sát thương (engine đã tính trong result.dmgTaken)
+        if (dmgTaken > 0) {
+          _arena.player.flashTimer = 18;
+          _arena.player.flashColor  = '#cc2200';
+
+          // Hiển thị số dmg bay ra từ player
+          _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
+            maxLife: 30,
+            dmg: dmgTaken,
+          });
+        }
       }
 
-      // Cập nhật UI
+      // ── CẬP NHẬT UI ───────────────────────────────
       _renderEnemyList(_arena.enemies);
       _updateHUD(result.state || state);
-      _showLog(newLog, isHit ? '#ff8844' : '#6688aa');
 
-      // Kiểm tra game over
+      // Màu log: vàng=hit, xanh=miss (player bị tổn thương)
+      var logColor = isHit ? (enemyDead ? '#44aa44' : '#ff8844') : '#cc6644';
+      _showLog(newLog, logColor);
+
+      // ── KIỂM TRA KẾT THÚC ─────────────────────────
       if (result.state && result.state.gameOver) {
-        _showLog('💀 BẠN ĐÃ CHẾT.', '#cc2200');
-        setTimeout(hide, 1800);
+        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
+        setTimeout(hide, 2000);
         return;
       }
 
-      // Nếu tất cả enemy chết → đóng arena
+      // Tất cả enemy chết
       var allDead = _arena.enemies.every(function (e) { return e.dead || e.hp <= 0; });
       if (allDead) {
         _showLog('✅ Kẻ thù đã bị tiêu diệt!', '#44aa44');
@@ -1029,6 +1093,7 @@ var DWArena = (function () {
 
       _arena.phase = 'idle';
       _updateButtons();
+
     }, 180);
   }
 
@@ -1040,30 +1105,55 @@ var DWArena = (function () {
 
     _arena.phase = 'enemy_attack';
 
-    var result = _raw.DW_flee(state, {});
+    var fleeRawFn = (typeof _raw !== 'undefined' && _raw.DW_flee) ? _raw.DW_flee
+                : (typeof window.DW_fleeRaw === 'function') ? window.DW_fleeRaw
+                : null;
+    if (!fleeRawFn) { _showLog('⚠ Engine flee unavailable', '#cc2200'); _arena.phase='idle'; return; }
+
+    var result = fleeRawFn(state, {});
     if (result.state) gs.setState(result.state);
 
     var msg = (result.state && result.state.log && result.state.log[0]) || result.msg || 'Bỏ chạy...';
-    _showLog(msg, '#6688cc');
 
     if (result.ok) {
-      // Player nhấp nháy xanh khi thoát
+      // Thoát thành công — player lùi xanh
       _arena.player.flashTimer = 10;
       _arena.player.flashColor  = '#2255aa';
+      _showLog('🏃 ' + msg, '#4488cc');
       setTimeout(hide, 900);
     } else {
-      // Flee thất bại — bị đánh
-      _arena.player.flashTimer = 14;
+      // Flee thất bại — bị zombie đánh
+      var dmgTaken = result.dmgTaken || 0;
+      _arena.player.flashTimer = 16;
       _arena.player.flashColor  = '#cc2200';
+
+      if (dmgTaken > 0) {
+        var pPos = _playerPixelPos();
+        _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
+          maxLife: 35, dmg: dmgTaken,
+        });
+      }
+
       _updateHUD(result.state || state);
-      _arena.phase = 'idle';
+
+      // Kiểm tra game over sau flee thất bại
+      if (result.state && result.state.gameOver) {
+        _showLog('💀 BỎ CHẠY THẤT BẠI — ' + msg, '#cc2200');
+        setTimeout(hide, 2000);
+        return;
+      }
+
+      _showLog('⚠ ' + msg, '#cc6644');
+      _arena.phase = 'idle';  // reset phase để player có thể hành động tiếp
       _updateButtons();
     }
   }
 
   // ── SHOW / HIDE ───────────────────────────────────
 
-  function show(state) {
+  var _onHideCallback = null;
+
+  function show(state, hintObjIdx) {
     _createDOM();
     if (!state) return;
     _visible = true;
@@ -1075,9 +1165,22 @@ var DWArena = (function () {
 
     if (tile && tile.objects) {
       rawEnemies = tile.objects.filter(function (o) {
+        // Look up def by type
         var def = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[o.type] : null;
-        return def && def.type === 'enemy';
+        if (def && def.type === 'enemy') return true;
+        // Fallback: check obj.type starts with zombie/enemy
+        if (o.type && (o.type.indexOf('zombie') >= 0 || o.type.indexOf('enemy') >= 0)) return true;
+        return false;
+      }).filter(function(o) {
+        return o.alive !== false; // chỉ enemy còn sống
       });
+    }
+
+    // Pre-select hint enemy if provided
+    var hintObjId = null;
+    if (typeof hintObjIdx === 'number' && tile && tile.objects) {
+      var hintObj = tile.objects[hintObjIdx];
+      if (hintObj) hintObjId = hintObj.id;
     }
 
     // Boss
@@ -1113,8 +1216,9 @@ var DWArena = (function () {
       _arena.enemies.push({
         id:      re.id,
         type:    re.type,
-        hp:      re.hp    || reDef.hp    || 10,
-        maxHp:   re.maxHp || reDef.maxHp || reDef.hp || 10,
+        // Khớp với engine-combat: objMaxHp = objDef.maxHp || objDef.hp || 5
+        hp:      re.hp    != null ? re.hp    : (reDef.maxHp || reDef.hp || 5),
+        maxHp:   re.maxHp != null ? re.maxHp : (reDef.maxHp || reDef.hp || 5),
         px:      rPos.px,
         py:      rPos.py,
         dead:    false,
@@ -1140,7 +1244,14 @@ var DWArena = (function () {
     _updateHUD(state);
     _renderEnemyList(_arena.enemies);
     _updateButtons();
-    _showLog('⚠ Chọn mục tiêu để tấn công. Quan sát xung quanh!');
+
+    // Auto-select hint enemy or first available
+    if (hintObjId) {
+      _selectEnemy(hintObjId);
+    } else if (_arena.enemies.length > 0) {
+      _selectEnemy(_arena.enemies[0].id);
+    }
+    _showLog('⚠ Chọn mục tiêu và tấn công!');
 
     // Start render loop
     if (_raf) cancelAnimationFrame(_raf);
@@ -1154,6 +1265,11 @@ var DWArena = (function () {
       _raf = null;
     }
     if (_overlay) _overlay.classList.remove('active');
+    _selectedEnemyObjId = null;
+    // Sync game world UI after combat
+    if (typeof UI_renderAll === 'function') {
+      setTimeout(UI_renderAll, 50);
+    }
   }
 
   // Hook tích hợp: ghi đè gs.fight để tự mở arena
