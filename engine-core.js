@@ -19,7 +19,9 @@
 // DW_calcMaxHp: tính maxHp từ skills (fitness.hp_bonus) + job bonus
 // Dùng cả trong newGame lẫn khi DW_spendSkillPoint thay đổi fitness.
 function DW_calcMaxHp(job, skills) {
-  const BASE_HP = 15;
+  // v3.2 balance: tăng từ 15→18 để player lv1 có đủ buffer trước zombie ngày đầu
+  // Nurse: 20HP | Soldier: 21HP | Others: 18HP
+  const BASE_HP = 18;
   const soldierBonus = job === 'soldier' ? 3 : 0;
   const nurseBonus   = job === 'nurse'   ? 2 : 0;
   // Đọc hp_bonus từ SKILL_UNLOCK_EFFECTS nếu đã load
@@ -37,6 +39,8 @@ function DW_newGame(jobId, seed) {
   for (const [sk, v] of Object.entries(job.startSkills || {})) skills[sk] = v;
 
   const maxHp = DW_calcMaxHp(jobId, skills);
+  const initState = { job: jobId, skills, inventory: [], statuses: [] };
+  const maxStm = (typeof DW_staminaMax === 'function') ? DW_staminaMax(initState) : 10;
 
   return {
     version: 3,
@@ -45,6 +49,10 @@ function DW_newGame(jobId, seed) {
     day: 1, hour: 8,
     ap: DW_apMax({ job: jobId, skills, inventory: [], statuses: [] }),
     lastRegenMs: Date.now(),
+    // ── STAMINA (chiến đấu ngắn hạn, tách biệt AP) ──
+    stamina:       maxStm,
+    maxStamina:    maxStm,
+    lastStmRegenMs: Date.now(),
     hp: maxHp,
     maxHp,
     hunger: 5.0, thirst: 5.0, stress: 0, depression: 0,
@@ -76,6 +84,12 @@ function DW_newGame(jobId, seed) {
 // Called every UI frame/interval to advance real-time systems
 function DW_tick(state, nowMs) {
   let s = DW_apRegen(state, nowMs);
+  // Stamina regen — nhanh hơn AP (30s vs 2 phút)
+  if (typeof DW_staminaRegen === 'function') {
+    s = DW_staminaRegen(s, nowMs);
+    // Đảm bảo maxStamina luôn đồng bộ với DW_staminaMax (state thay đổi liên tục)
+    s.maxStamina = DW_staminaMax(s);
+  }
   s = DW_updatePanic(s);
   return s;
 }
