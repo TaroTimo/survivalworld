@@ -198,6 +198,10 @@ var DWArena = (function () {
         'background:#2a0808;border-color:#cc2200;color:#ff4444;',
       '}',
       '.dwa-btn-flee{border-color:#1a3050;}',
+      '.dwa-btn-rest{border-color:#1a3a1a;color:#7aaa7a;}',
+      '.dwa-btn-rest:hover:not(:disabled){background:#0a1a0a;border-color:#44cc44;color:#88ff88;}',
+      '.dwa-btn-rest.threat-warning{border-color:#aa6600;color:#ffaa44;animation:pulse-warning 1s infinite;}',
+      '@keyframes pulse-warning{0%,100%{opacity:1}50%{opacity:0.6}}',
 
       // Enemy cards
       '#dwa-enemy-list{',
@@ -260,19 +264,23 @@ var DWArena = (function () {
         '<div id="dwa-btn-row">',
           '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-fight" disabled>',
             '⚔ TẤN CÔNG',
-            '<span class="dwa-ap" id="dwa-btn-fight-ap">-3 AP</span>',
+            '<span class="dwa-ap" id="dwa-btn-fight-ap">-3 SB</span>',
           '</button>',
           '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-heavy" disabled>',
             '💥 ĐÒN MẠNH',
-            '<span class="dwa-ap">-4 AP</span>',
+            '<span class="dwa-ap">-4 SB +1 ĐHĐ</span>',
           '</button>',
           '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-stealth" disabled>',
             '🗡 ÁM SÁT',
-            '<span class="dwa-ap">-3 AP</span>',
+            '<span class="dwa-ap">-3 SB</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-rest" id="dwa-btn-rest">',
+            '😮‍💨 NGHỈ',
+            '<span class="dwa-ap" id="dwa-btn-rest-lbl">Zombie phản công</span>',
           '</button>',
           '<button class="dwa-btn dwa-btn-flee" id="dwa-btn-flee">',
             '🏃 BỎ CHẠY',
-            '<span class="dwa-ap">-2 AP</span>',
+            '<span class="dwa-ap">-2 ĐHĐ</span>',
           '</button>',
         '</div>',
       '</div>',
@@ -297,6 +305,7 @@ var DWArena = (function () {
     document.getElementById('dwa-btn-stealth').addEventListener('click', function () {
       _doAttack('stealth');
     });
+    document.getElementById('dwa-btn-rest').addEventListener('click', _doThreatRound);
     document.getElementById('dwa-btn-flee').addEventListener('click', _doFlee);
   }
 
@@ -859,7 +868,10 @@ var DWArena = (function () {
     var ap   = document.getElementById('dwa-ap');
     var ammo = document.getElementById('dwa-ammo');
     if (hp)   hp.textContent   = (state.hp || 0) + '/' + (state.maxHp || 0);
-    if (ap)   ap.textContent   = Math.floor(state.ap || 0);
+    // Hiển thị STAMINA thay AP trong arena (AP vẫn hiển thị nhỏ hơn)
+    var maxStmHud = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state.maxStamina || 10);
+    var curStmHud = state.stamina != null ? state.stamina : maxStmHud;
+    if (ap) ap.textContent = curStmHud + '/' + maxStmHud + ' SB';
 
     // Đạn
     var wid  = state.equip && state.equip.weapon;
@@ -924,8 +936,11 @@ var DWArena = (function () {
   function _updateButtons() {
     var state  = gs && gs._state;
     var ap     = state ? (state.ap || 0) : 0;
+    var maxStm = (state && typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state?.maxStamina || 10);
+    var stm    = state ? (state.stamina ?? maxStm) : 0;
+    var pressure = state ? (state.threatPressure || 0) : 0;
 
-    // Kiểm tra target hợp lệ: có id + enemy đó còn sống trong _arena.enemies
+    // Kiểm tra target hợp lệ
     var hasTarget = false;
     if (_selectedEnemyObjId) {
       for (var i = 0; i < _arena.enemies.length; i++) {
@@ -935,24 +950,45 @@ var DWArena = (function () {
           break;
         }
       }
-      // Nếu target đã chết, xóa selection
       if (!hasTarget) _selectedEnemyObjId = null;
     }
 
-    // AP costs tương ứng từng nút
+    var hasLiveEnemy = _arena.enemies.some(function(e) { return !e.dead && e.hp > 0; });
+
     var btnFight   = document.getElementById('dwa-btn-fight');
     var btnHeavy   = document.getElementById('dwa-btn-heavy');
     var btnStealth = document.getElementById('dwa-btn-stealth');
+    var btnRest    = document.getElementById('dwa-btn-rest');
     var btnFlee    = document.getElementById('dwa-btn-flee');
 
-    if (btnFight)   btnFight.disabled   = !hasTarget || ap < 3;
-    if (btnHeavy)   btnHeavy.disabled   = !hasTarget || ap < 4;
-    if (btnStealth) btnStealth.disabled = !hasTarget || ap < 3;
+    if (btnFight)   btnFight.disabled   = !hasTarget || stm < 3;
+    if (btnHeavy)   btnHeavy.disabled   = !hasTarget || stm < 4 || ap < 1;
+    if (btnStealth) btnStealth.disabled = !hasTarget || stm < 3;
     if (btnFlee)    btnFlee.disabled    = ap < 2;
 
-    // Cập nhật AP label trên nút tấn công
+    // Nút Nghỉ: luôn available khi còn enemy (đây là mục đích cốt lõi)
+    // Khi không có enemy → vẫn available để hồi STM an toàn
+    if (btnRest) {
+      btnRest.disabled = false; // luôn bấm được
+      var restLbl = document.getElementById('dwa-btn-rest-lbl');
+      if (hasLiveEnemy) {
+        // Hiển thị warning pulsing khi có nhiều miss (threatPressure cao)
+        if (pressure >= 3) {
+          btnRest.className = 'dwa-btn dwa-btn-rest threat-warning';
+          if (restLbl) restLbl.textContent = '⚠ ' + _arena.enemies.filter(function(e){return !e.dead&&e.hp>0;}).length + ' zombie phản công!';
+        } else {
+          btnRest.className = 'dwa-btn dwa-btn-rest';
+          if (restLbl) restLbl.textContent = 'Zombie phản công';
+        }
+      } else {
+        btnRest.className = 'dwa-btn dwa-btn-rest';
+        if (restLbl) restLbl.textContent = 'Hồi SB an toàn';
+      }
+    }
+
+    // AP label cho fight
     var fightApLbl = document.getElementById('dwa-btn-fight-ap');
-    if (fightApLbl) fightApLbl.textContent = ap < 3 ? 'Thiếu AP' : '-3 AP';
+    if (fightApLbl) fightApLbl.textContent = stm < 3 ? 'Hết SB' : '-3 SB';
   }
 
   // Hiển thị log message
@@ -995,9 +1031,12 @@ var DWArena = (function () {
     var result = rawFn(state, _selectedEnemyObjId, opts);
 
     // Engine trả về: { ok, hit, enemyDead, dmg, enemyHp, enemyMaxHp, dmgTaken, state }
-    // Nếu không đủ AP: ok=false, state=unchanged
+    // Nếu không đủ STM/AP: ok=false — gợi ý nút Nghỉ
     if (!result.ok) {
-      _showLog(result.msg || 'Không đủ ĐHĐ!', '#cc8800');
+      var exhaustMsg = result.staminaExhausted
+        ? '😮‍💨 Hết sức bền! Nhấn [NGHỈ] để hồi SB — zombie sẽ phản công.'
+        : (result.msg || 'Không đủ ĐHĐ!');
+      _showLog(exhaustMsg, '#cc8800');
       _arena.phase = 'idle';
       _updateButtons();
       return;
@@ -1051,20 +1090,17 @@ var DWArena = (function () {
         }
 
       } else {
-        // ── MISS: player trượt → zombie phản công trúng ──
+        // ── MISS: player trượt — zombie áp sát (không mất HP ngay) ──
+        // HP chỉ mất khi bấm NGHỈ (Threat Round). Miss chỉ tốn STM.
         _addEffect('miss_text', targetArena ? targetArena.px + 8 : pPos.px, targetArena ? targetArena.py : pPos.py, { maxLife: 25 });
 
-        // Player nhận sát thương (engine đã tính trong result.dmgTaken)
-        if (dmgTaken > 0) {
-          _arena.player.flashTimer = 18;
-          _arena.player.flashColor  = '#cc2200';
-
-          // Hiển thị số dmg bay ra từ player
-          _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
-            maxLife: 30,
-            dmg: dmgTaken,
-          });
+        // Flash nhẹ trên zombie (đang áp sát player) — KHÔNG flash player
+        if (targetArena) {
+          targetArena.flashTimer = 8;
+          targetArena.flashColor = '#ff9900'; // cam — zombie đang tăng áp lực
         }
+
+        // Không show dmg từ player (dmgTaken=0 theo thiết kế mới)
       }
 
       // ── CẬP NHẬT UI ───────────────────────────────
@@ -1147,6 +1183,84 @@ var DWArena = (function () {
       _arena.phase = 'idle';  // reset phase để player có thể hành động tiếp
       _updateButtons();
     }
+  }
+
+  // ── THREAT ROUND (nút Nghỉ trong arena) ───────────────────────────
+  // Gọi DW_threatRound() từ engine-combat — tất cả zombie phản công 1 lần,
+  // player hồi 60% STM. Animation: flash đỏ player + hiển thị dmg từng zombie.
+  function _doThreatRound() {
+    var state = gs && gs._state;
+    if (!state) return;
+    if (_arena.phase !== 'idle') return;
+
+    _arena.phase = 'enemy_attack';
+
+    // Gọi engine
+    var threatFn = (typeof DW_threatRound === 'function') ? DW_threatRound : null;
+    if (!threatFn) {
+      // Fallback: không có engine function → chỉ hồi STM, không mất HP
+      var maxStm = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : 10;
+      var newStm = Math.min(maxStm, Math.ceil(maxStm * 0.60));
+      var fallbackState = Object.assign({}, state, { stamina: newStm, maxStamina: maxStm, threatPressure: 0 });
+      gs.setState(fallbackState);
+      _showLog('😮‍💨 Nghỉ — SB hồi một phần.', '#7aaa7a');
+      _arena.phase = 'idle';
+      _updateButtons();
+      return;
+    }
+
+    var result = threatFn(state);
+    if (result.state) gs.setState(result.state);
+
+    var dmgTaken  = result.totalDmg || 0;
+    var zCount    = result.zombieCount || 0;
+    var pPos      = _playerPixelPos();
+
+    if (dmgTaken > 0) {
+      // Animation: flash đỏ player + số dmg
+      _arena.player.flashTimer = 25;
+      _arena.player.flashColor = '#cc2200';
+      _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
+        maxLife: 40,
+        dmg: dmgTaken,
+      });
+
+      // Tất cả zombie sống chớp sáng (đang tấn công)
+      for (var i = 0; i < _arena.enemies.length; i++) {
+        if (!_arena.enemies[i].dead && _arena.enemies[i].hp > 0) {
+          _arena.enemies[i].flashTimer = 12;
+          _arena.enemies[i].flashColor = '#ff6600';
+        }
+      }
+    }
+
+    setTimeout(function () {
+      var newState = result.state || state;
+
+      _updateHUD(newState);
+      _renderEnemyList(_arena.enemies);
+
+      if (dmgTaken > 0) {
+        var logColor = newState.gameOver ? '#cc2200' : '#ff8844';
+        _showLog(
+          zCount > 0
+            ? ('💥 ' + zCount + ' zombie phản công — mất ' + dmgTaken + ' HP. SB hồi lại!')
+            : '😮‍💨 Nghỉ an toàn — SB hồi đầy.',
+          logColor
+        );
+      } else {
+        _showLog('😮‍💨 Nghỉ an toàn — SB hồi đầy.', '#7aaa7a');
+      }
+
+      if (newState.gameOver) {
+        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
+        setTimeout(hide, 2000);
+        return;
+      }
+
+      _arena.phase = 'idle';
+      _updateButtons();
+    }, 300);
   }
 
   // ── SHOW / HIDE ───────────────────────────────────
