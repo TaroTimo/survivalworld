@@ -34,6 +34,7 @@
       lootPoolKey: 'zombie_normal',
     },
     // zombie_runner — nhanh, ít HP nhưng nguy hiểm khi phát hiện sớm
+    // v3.2 balance: minDay=2 — không xuất hiện ngay ngày 1
     zombie_runner: {
       icon: '💨',
       label: 'Zombie chạy nhanh',
@@ -42,38 +43,46 @@
       damage: 2,
       hp: 4,
       flee_ap: 3,
+      minDay: 2,                    // day-gate: chỉ spawn từ ngày 2+
       xpKey: 'kill_zombie_special', // 20 XP
       lootPoolKey: 'zombie_normal',
       tags: ['fast'],
     },
     // zombie_brute — to, nhiều HP, giáp tự nhiên
+    // v3.2 balance: minDay=3, damage 3→2, hp 12→10 — vẫn tank nhưng không insta-kill
     zombie_brute: {
       icon: '💪',
       label: 'Zombie to xác',
       type: 'enemy',
       fightAp: 4,
-      damage: 3,
-      hp: 12,
+      damage: 2,                    // nerf: 3→2 (giảm burst, vẫn nguy hiểm theo số đòn)
+      hp: 10,                       // nerf: 12→10 (giảm grind, chết trong ~7 hits bare hands)
       armor: 1,
       flee_ap: 2,
+      minDay: 3,                    // day-gate: chỉ spawn từ ngày 3+
       xpKey: 'kill_zombie_special', // 20 XP
       lootPoolKey: 'zombie_elite',
     },
     // zombie_bloated — phình to, độc, drop máu biến thể
+    // v3.2 balance: minDay=4, damage 2→1, hp 8→5
+    // Poison vẫn giữ nguyên — đây là identity nguy hiểm của nó (dài hạn)
+    // Ngày 1 player không có antibiotic → nerf stat để có thời gian xử lý
     zombie_bloated: {
       icon: '🤢',
       label: 'Zombie phình độc',
       type: 'enemy',
       fightAp: 3,
-      damage: 2,
-      hp: 8,
+      damage: 1,                    // nerf: 2→1 (poison là punishment đủ rồi)
+      hp: 5,                        // nerf: 8→5 (chết trong 5 hits bare hands)
       flee_ap: 2,
-      poisonOnHit: true,           // engine-combat.js kiểm tra flag này
+      minDay: 4,                    // day-gate: chỉ spawn từ ngày 4+
+      poisonOnHit: true,            // vẫn giữ — mechanic cốt lõi
       xpKey: 'kill_zombie_special', // 20 XP
       lootPoolKey: 'zombie_elite',
     },
     // zombie_boss_grunt — mini-boss zombie (khác với BOSS_DEFS)
     // Dùng cho encounter cuối ngày hoặc ổ zombie đặc biệt
+    // v3.2 balance: minDay=5 — không xuất hiện sớm
     zombie_boss: {
       icon: '🧟‍♂️',
       label: 'Zombie đầu đàn',
@@ -83,6 +92,7 @@
       hp: 20,
       flee_ap: 2,
       isHorde: false,
+      minDay: 5,                    // day-gate: chỉ spawn từ ngày 5+
       xpKey: 'kill_boss',          // 150 XP — mini-boss
       lootPoolKey: 'zombie_boss',
     },
@@ -104,9 +114,15 @@
 
   // Các pool cần bổ sung enemy types mới
   // Chỉ push — không override pool cũ hoàn toàn
+  //
+  // v3.2 balance philosophy:
+  //   - Early tiles (apartment, hospital): chỉ zombie_walker (minDay=1, dmg=1)
+  //   - Mid tiles (police, mall, street): runner/brute có minDay-gate tự filter
+  //   - Deep tiles (warehouse, zombie_nest, tunnel): giữ nguyên elite enemies
+  //   - DW_makeTile sẽ filter thêm theo minDay tại runtime
   const extensions = {
     street:      ['zombie_walker', 'zombie_runner', 'zombie_brute'],
-    hospital:    ['zombie_walker', 'zombie_bloated'],
+    hospital:    ['zombie_walker'],               // v3.2: bỏ bloated — gần spawn, quá sớm
     police:      ['zombie_runner', 'zombie_brute'],
     warehouse:   ['zombie_brute', 'zombie_boss'],
     mall:        ['zombie_walker', 'zombie_runner', 'zombie_brute'],
@@ -114,7 +130,7 @@
     zombie_nest: ['zombie_brute', 'zombie_boss', 'zombie_bloated'],
     rubble:      ['zombie_walker', 'zombie_brute'],
     alley:       ['zombie_runner', 'zombie_walker'],
-    apartment:   ['zombie_walker', 'zombie_bloated'],
+    apartment:   ['zombie_walker'],               // v3.2: bỏ bloated — gần spawn, quá sớm
     tunnel:      ['zombie_runner', 'zombie_bloated'],
   };
 
