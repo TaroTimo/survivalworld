@@ -3947,6 +3947,52 @@ function UI_renderBaseActions(s, base) {
   el.innerHTML = btns.join('');
 }
 
+// ── UI_openBaseEvent ──────────────────────────────────
+// Hiển thị popup sự kiện base đang chờ (pendingBaseEvent).
+// Player chọn choice → DW_resolveBaseEvent → update state.
+function UI_openBaseEvent() {
+  const s = gs._state;
+  if (!s) return;
+  const event = s.pendingBaseEvent;
+  if (!event) { showNotif('Không có sự kiện nào đang chờ.', 'info'); return; }
+
+  // Xây overlay
+  let overlay = document.getElementById('base-event-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'base-event-overlay';
+    overlay.style.cssText = [
+      'position:fixed','inset:0','z-index:9999',
+      'display:flex','align-items:center','justify-content:center',
+      'background:rgba(0,0,0,.82)',
+    ].join(';');
+    document.body.appendChild(overlay);
+  }
+
+  const choices = event.choices || [];
+  const choiceHTML = choices.length > 0
+    ? choices.map(c => `<button class="base-act-btn${c.id==='flee'?' danger':c.id==='defend'?' primary':''}"
+        onclick="UI_resolveBaseEvent('${c.id}')">${c.label}</button>`).join('')
+    : `<button class="base-act-btn" onclick="UI_resolveBaseEvent('ok')">✅ Đã hiểu</button>`;
+
+  overlay.innerHTML = `
+    <div style="background:#0d0d0d;border:1px solid #333;border-radius:4px;padding:24px;max-width:340px;width:90%;font-family:'Rajdhani',sans-serif;">
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;">${event.icon || '⚠️'}</div>
+      <div style="color:var(--amber,#c8963c);font-size:18px;font-weight:700;margin-bottom:8px;text-align:center">${event.title || 'Sự kiện'}</div>
+      <div style="color:#bbb;font-size:13px;line-height:1.6;margin-bottom:18px">${event.text || ''}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">${choiceHTML}</div>
+    </div>`;
+  overlay.style.display = 'flex';
+}
+
+function UI_resolveBaseEvent(choiceId) {
+  const r = DW_resolveBaseEvent(choiceId);
+  document.getElementById('base-event-overlay').style.display = 'none';
+  if (r && r.msg) showNotif(r.msg, r.ok ? 'success' : 'danger');
+  UI_renderAll();
+  if (typeof UI_renderBaseTab === 'function') UI_renderBaseTab();
+}
+
 // Terrain cell click → show farm/clear options
 function UI_baseTerrainClick(key, terrainType, farmState, isCleared) {
   const s = gs._state;
