@@ -1,6696 +1,1634 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>DEAD WORLD</title>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@500;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
-<!-- ════ SCRIPT LOAD ORDER — MANDATORY ════
-  1. Data layer
-  2. Engine core modules
-  3. Role skill trees
-  4. UI layer
-  5. Shim (last)
-═══════════════════════════════════════════ -->
-
-<!-- 1. DATA -->
-<script src="deadworld-data.js"></script>
-<script src="deadworld-data-addon.js"></script>
-<script src="deadworld-data-rarity-addon.js"></script>
-
-<!-- 2. ENGINE -->
-<script src="engine-skills.js"></script>
-<script src="engine-boss.js"></script>
-<script src="engine-world.js"></script>
-<script src="engine-zone-travel.js"></script>
-<script src="engine-inventory.js"></script>
-<script src="engine-combat.js"></script>
-<script src="engine-survival.js"></script>
-<script src="engine-survival-patch.js"></script>
-<script src="engine-saveload.js"></script>
-<script src="engine-ai.js"></script>
-<script src="engine-core.js"></script>
-
-<!-- 3. SKILL TREES (sau engine) -->
-<script src="farmer-skill-tree.js"></script>
-<script src="mechanic-skill-tree.js"></script>
-<script src="chef-skill-tree.js"></script>
-<script src="nurse-skill-tree.js"></script>
-<script src="driver-skill-tree.js"></script>
-<script src="police-skill-tree.js"></script>
-<script src="soldier-skill-tree.js"></script>
-<script src="teacher-skill-tree.js"></script>
-
-<!-- 4. UI LAYER -->
-<script src="deadworld-zone-ui.js"></script>
-<script src="deadworld-combat-arena.js"></script>
-
-<!-- 5. SHIM (cuối cùng) -->
-<script src="deadworld-shim.js"></script>
-<style>
-/* ── RESET & BASE ── */
-*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
-html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-family:'Rajdhani',sans-serif;font-size:15px;}
-:root{
-  --bg:#0a0a0a; --panel:#111; --darker:#0d0d0d; --border:#1e1e1e; --border2:#2a2a2a;
-  --amber:#F0C000; --blood:#7A1515; --blood-bright:#D44030;
-  --green:#5DD462; --blue:#5CD0FF; --dim:#666; --mono:'Share Tech Mono',monospace;
-  /* font scale — dễ đọc hơn */
-  --fs-sm: 10px; --fs-base: 13px; --fs-md: 15px; --fs-lg: 18px;
-}
-
-/* ── SCREENS ── */
-.screen{display:none;width:100%;height:100%;}
-.screen.active{display:flex;}
-#s-create{flex-direction:column;align-items:center;justify-content:flex-start;overflow-y:auto;background:var(--bg);}
-#s-game{flex-direction:column;overflow:hidden;}
-
-/* ── CREATE SCREEN ── */
-.create-inner{width:100%;max-width:520px;padding:20px 16px 40px;}
-.create-title{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:8px;color:var(--blood-bright);text-align:center;line-height:1;margin-bottom:4px;}
-.create-sub{font-family:var(--mono);font-size:9px;letter-spacing:3px;color:var(--dim);text-align:center;margin-bottom:24px;}
-.create-section{margin-bottom:20px;}
-.create-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:var(--dim);margin-bottom:8px;text-transform:uppercase;display:flex;align-items:center;gap:8px;}
-.create-label-line{flex:1;height:1px;background:var(--border2);}
-.create-input{width:100%;background:#0d0d0d;border:1px solid var(--border2);color:#BDB8AE;padding:10px 12px;font-family:'Rajdhani',sans-serif;font-size:15px;-webkit-appearance:none;outline:none;}
-.create-input:focus{border-color:var(--amber);}
-
-/* Difficulty filter — ẩn đi, không dùng nữa */
-.diff-filter{display:none;}
-
-/* ── JOB GRID — 2 cột bí ẩn ── */
-.job-grid{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:8px;
-}
-
-/* Job card — viền glow nổi bật khi hover/select */
-.job-card{
-  background:#0c0c0c;
-  border:1px solid #242424;
-  padding:14px 12px 12px;
-  cursor:pointer;
-  -webkit-appearance:none;text-align:left;width:100%;
-  position:relative;overflow:hidden;
-  /* Transition đủ để cảm giác "sống" nhưng không lố */
-  transition:border-color .2s, background .2s, box-shadow .2s, transform .15s;
-}
-/* Thanh accent ở đỉnh card — luôn có, nhạt lúc idle */
-.job-card::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,#333,transparent);
-  transition:background .2s;
-}
-/* Hover: viền sáng lên + bóng đổ vàng nhẹ + nhích lên */
-.job-card:hover{
-  border-color:#555;
-  background:#111;
-  box-shadow:0 0 12px rgba(240,192,0,.06), 0 2px 8px rgba(0,0,0,.4);
-  transform:translateY(-1px);
-}
-.job-card:hover::before{
-  background:linear-gradient(90deg,transparent,var(--amber),transparent);
-}
-/* Selected: glow vàng rõ + nền ấm */
-.job-card.selected{
-  border-color:var(--amber);
-  background:#0f0d00;
-  box-shadow:0 0 0 1px rgba(240,192,0,.15), 0 0 20px rgba(240,192,0,.08);
-}
-.job-card.selected::before{
-  background:linear-gradient(90deg,transparent,var(--amber),transparent);
-  opacity:1;
-}
-
-.job-card-top{display:flex;align-items:center;gap:10px;}
-.job-icon{
-  font-size:28px;flex-shrink:0;line-height:1;
-  transition:transform .2s;
-}
-.job-card:hover .job-icon{transform:scale(1.1);}
-.job-card.selected .job-icon{transform:scale(1.15);}
-.job-main{flex:1;min-width:0;}
-.job-name{
-  font-family:'Bebas Neue',sans-serif;font-size:18px;
-  letter-spacing:1.5px;line-height:1;color:#CEC9C0;
-  transition:color .15s;
-}
-.job-card:hover .job-name{color:#E8E0D0;}
-.job-card.selected .job-name{color:var(--amber);}
-.job-tagline{
-  font-family:var(--mono);font-size:9px;color:#444;
-  line-height:1.4;margin-top:3px;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  transition:color .15s;
-}
-.job-card:hover .job-tagline{color:#666;}
-/* Ẩn badge độ khó — không tiết lộ */
-.job-diff-badge{display:none;}
-/* Mũi tên nhỏ ở góc dưới phải gợi ý "xem thêm" */
-.job-card::after{
-  content:'›';
-  position:absolute;bottom:7px;right:9px;
-  font-family:var(--mono);font-size:12px;color:#2a2a2a;
-  transition:color .2s,transform .2s;
-}
-.job-card:hover::after{color:#555;transform:translateX(2px);}
-.job-card.selected::after{color:var(--amber);transform:translateX(2px);}
-
-/* ── JOB DETAIL — Popup overlay giữa màn hình ── */
-.job-popup-overlay{
-  position:fixed;inset:0;
-  background:rgba(0,0,0,.85);
-  backdrop-filter:blur(3px);
-  z-index:500;
-  display:none;align-items:center;justify-content:center;
-  padding:16px;
-}
-.job-popup-overlay.show{display:flex;}
-
-/* Box nội dung */
-.job-popup-box{
-  background:#111;
-  border:1px solid #333;
-  width:100%;max-width:480px;
-  max-height:88vh;overflow-y:auto;
-  box-shadow:0 0 40px rgba(0,0,0,.8), 0 0 0 1px rgba(240,192,0,.08);
-  animation:jobPopIn .22s cubic-bezier(.2,.8,.4,1);
-  position:relative;
-}
-.job-popup-box::-webkit-scrollbar{width:2px;}
-@keyframes jobPopIn{
-  from{transform:scale(.94) translateY(12px);opacity:0}
-  to  {transform:none;opacity:1}
-}
-
-/* Header popup */
-.job-popup-header{
-  padding:16px 18px 12px;
-  border-bottom:2px solid #1e1e1e;
-  display:flex;align-items:center;gap:14px;
-  position:sticky;top:0;background:#111;z-index:1;
-}
-.job-popup-icon{font-size:36px;line-height:1;flex-shrink:0;}
-.job-popup-title{flex:1;}
-.job-popup-name{
-  font-family:'Bebas Neue',sans-serif;font-size:28px;
-  letter-spacing:3px;color:var(--amber);line-height:1;
-}
-.job-popup-tagline{font-family:var(--mono);font-size:10px;color:#666;margin-top:3px;}
-/* Nút đóng */
-.job-popup-close{
-  font-family:var(--mono);font-size:11px;color:#444;
-  background:none;border:1px solid #2a2a2a;padding:6px 12px;
-  cursor:pointer;-webkit-appearance:none;
-  transition:color .1s,border-color .1s;flex-shrink:0;
-}
-.job-popup-close:hover{color:#CEC9C0;border-color:#555;}
-
-/* Body popup */
-.job-popup-body{padding:14px 18px 18px;}
-.job-popup-perk{
-  background:#0a0a0a;border:1px solid #2a2800;border-left:3px solid var(--amber);
-  padding:10px 12px;margin-bottom:14px;
-  font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6;
-}
-.job-popup-perk::before{content:'⭐  ';opacity:.7;}
-.job-proscons{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
-.job-pros,.job-cons{padding:8px 10px;background:#0a0a0a;border:1px solid #1e1e1e;}
-.job-proscons-label{font-family:var(--mono);font-size:9px;letter-spacing:2px;margin-bottom:6px;text-transform:uppercase;}
-.job-pros .job-proscons-label{color:#55C45A;}
-.job-cons .job-proscons-label{color:#C0392B;}
-.job-proscons li{
-  font-family:var(--mono);font-size:10px;color:#888;
-  line-height:1.7;list-style:none;padding-left:14px;position:relative;
-}
-.job-pros li::before{content:'✓ ';color:#55C45A;position:absolute;left:0;}
-.job-cons li::before{content:'✗ ';color:#C0392B;position:absolute;left:0;}
-
-.job-popup-section-label{
-  font-family:var(--mono);font-size:9px;letter-spacing:2px;color:#444;
-  text-transform:uppercase;margin-bottom:8px;
-}
-.job-stats{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px;}
-.job-stat-chip{
-  font-family:var(--mono);font-size:9px;padding:4px 10px;
-  background:#0d0d0d;border:1px solid #222;color:#4FC3F7;
-}
-/* Nút CHỌN ở cuối popup */
-.job-popup-select-btn{
-  width:100%;background:#0d0d0d;border:1px solid var(--amber);
-  color:var(--amber);font-family:'Bebas Neue',sans-serif;
-  font-size:20px;letter-spacing:3px;padding:12px;
-  cursor:pointer;-webkit-appearance:none;margin-top:4px;
-  transition:background .15s;
-}
-.job-popup-select-btn:hover{background:#161000;}
-.job-popup-select-btn.chosen{
-  background:var(--amber);color:#0a0a0a;
-}
-
-/* Giữ lại class cũ để không crash nếu còn gọi */
-.job-detail-panel{display:none;}
-.job-perk-row{background:#0d0d0d;border:1px solid var(--border);padding:6px 8px;margin-bottom:8px;
-  font-family:var(--mono);font-size:10px;color:var(--amber);line-height:1.5;}
-
-/* Attr rows — 2 cột, nút +/- */
-.attr-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
-.attr-row{display:flex;align-items:center;gap:0;background:#0d0d0d;border:1px solid #1e1e1e;padding:8px 10px;}
-.attr-left{flex:1;min-width:0;}
-.attr-label{font-family:var(--mono);font-size:10px;color:var(--amber);display:block;}
-.attr-effect{font-family:var(--mono);font-size:8px;color:#444;display:block;margin-top:1px;}
-/* +/- control */
-.attr-ctrl{display:flex;align-items:center;gap:0;flex-shrink:0;}
-.attr-btn{
-  width:26px;height:26px;border:1px solid #2a2a2a;background:#111;
-  color:#888;font-size:16px;line-height:1;cursor:pointer;
-  -webkit-appearance:none;display:flex;align-items:center;justify-content:center;
-  transition:border-color .1s,color .1s;font-family:var(--mono);
-}
-.attr-btn:hover:not(:disabled){border-color:var(--amber);color:var(--amber);}
-.attr-btn:disabled{color:#222;border-color:#1a1a1a;cursor:not-allowed;}
-.attr-val{
-  font-family:'Bebas Neue',sans-serif;font-size:22px;
-  color:var(--amber);min-width:28px;text-align:center;line-height:1;
-  padding:0 2px;
-}
-.attr-val.zero{color:#333;}
-
-/* Start btn */
-.start-btn{width:100%;background:#0d0d0d;border:1px solid var(--amber);color:var(--amber);font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:3px;padding:14px;cursor:pointer;-webkit-appearance:none;margin-top:10px;}
-.start-btn:hover{background:#161000;}
-
-/* ── TUTORIAL OVERLAY ── */
-.tutorial-overlay{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:400;display:none;align-items:center;justify-content:center;padding:12px;}
-.tutorial-overlay.show{display:flex;}
-.tutorial-box{background:#111;border:1px solid var(--border2);width:100%;max-width:500px;height:88vh;max-height:640px;display:flex;flex-direction:column;overflow:hidden;}
-.tut-header{padding:16px 18px 12px;border-bottom:1px solid var(--border);flex-shrink:0;}
-.tut-title{font-family:'Bebas Neue',sans-serif;font-size:28px;letter-spacing:4px;color:var(--blood-bright);}
-.tut-sub{font-family:var(--mono);font-size:8px;color:var(--dim);letter-spacing:2px;margin-top:2px;}
-.tut-progress{display:flex;gap:3px;margin-top:10px;}
-.tut-dot{flex:1;height:3px;background:var(--border2);transition:background .3s;}
-.tut-dot.done{background:var(--amber);}
-.tut-dot.active{background:var(--blood-bright);}
-.tut-pages{flex:1;overflow-y:auto;min-height:0;}
-.tut-pages::-webkit-scrollbar{width:2px;}
-.tut-pages::-webkit-scrollbar-thumb{background:var(--border2);}
-.tut-page{display:none;padding:16px 18px;}
-.tut-page.active{display:block;}
-.tut-page-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:#BDB8AE;margin-bottom:10px;display:flex;align-items:center;gap:8px;}
-.tut-section{margin-bottom:14px;}
-.tut-section-label{font-family:var(--mono);font-size:8px;letter-spacing:2px;color:var(--amber);margin-bottom:6px;text-transform:uppercase;}
-.tut-text{font-size:12px;color:#999;line-height:1.7;}
-.tut-card{background:#0d0d0d;border:1px solid var(--border);border-left:3px solid var(--amber);padding:8px 10px;margin-bottom:6px;}
-.tut-card-title{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;color:#BDB8AE;margin-bottom:2px;}
-.tut-card-text{font-family:var(--mono);font-size:8px;color:var(--dim);line-height:1.5;}
-.tut-danger-card{border-left-color:var(--blood-bright);}
-.tut-tip{background:rgba(232,184,0,.06);border:1px solid rgba(232,184,0,.2);padding:8px 10px;font-family:var(--mono);font-size:9px;color:var(--amber);line-height:1.5;margin-bottom:6px;}
-.tut-wpn-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:8px;margin-bottom:6px;}
-.tut-wpn-table th{color:var(--amber);text-align:left;padding:4px 6px;border-bottom:1px solid var(--border2);}
-.tut-wpn-table td{padding:4px 6px;color:var(--dim);border-bottom:1px solid var(--border);}
-.tut-wpn-table tr:last-child td{border-bottom:none;}
-.tut-footer{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-shrink:0;}
-.tut-nav-btn{flex:1;background:var(--darker);border:1px solid var(--border2);color:var(--dim);font-family:var(--mono);font-size:10px;padding:10px;cursor:pointer;-webkit-appearance:none;transition:border-color .15s;}
-.tut-nav-btn:hover{border-color:var(--amber);color:var(--amber);}
-.tut-nav-btn.primary{background:#0d0d0d;border-color:var(--amber);color:var(--amber);}
-.tut-nav-btn.primary:hover{background:#161000;}
-.tut-skip{background:none;border:none;color:var(--dim);font-family:var(--mono);font-size:9px;cursor:pointer;padding:4px 8px;-webkit-appearance:none;}
-.tut-skip:hover{color:#BDB8AE;}
-
-/* ── GAME SCREEN ── */
-/* Header — dense, color-coded, scan-line effect */
-.game-header{
-  display:flex;align-items:stretch;gap:0;
-  background:#0d0d0d;border-bottom:2px solid #1e1e1e;
-  flex-shrink:0;overflow:hidden;position:relative;
-}
-.game-header::after{
-  content:'';position:absolute;inset:0;pointer-events:none;
-  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);
-}
-/* ── HP block ── */
-.hstat{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 12px;border-right:1px solid #222;min-width:62px;position:relative;}
-.hstat-val{font-family:'Bebas Neue',sans-serif;font-size:28px;line-height:1;letter-spacing:1px;}
-.hstat-lbl{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:#555;text-transform:uppercase;margin-top:2px;}
-.hstat.ok   .hstat-val{color:var(--green);}
-.hstat.warn .hstat-val{color:var(--amber);}
-.hstat.crit .hstat-val{color:var(--blood-bright);animation:pulse .7s infinite;}
-
-/* ── AP bar block ── */
-.hstat-ap{padding:6px 12px;border-right:1px solid #222;min-width:120px;display:flex;flex-direction:column;justify-content:center;}
-.ap-label{font-family:var(--mono);font-size:11px;color:var(--amber);letter-spacing:1px;margin-bottom:4px;display:flex;justify-content:space-between;}
-.ap-label span:first-child{color:#666;}
-.ap-track{height:8px;background:#0a0a0a;border-radius:2px;overflow:hidden;border:1px solid #222;}
-.ap-fill{height:100%;border-radius:2px;transition:width .4s;background:linear-gradient(90deg,#7A1515 0%,var(--amber) 55%,#ffe066 100%);}
-/* XP Bar */
-.xp-bar-wrap{padding:0 10px;display:flex;flex-direction:column;justify-content:center;min-width:130px;border-right:1px solid #222;}
-.xp-bar-label{font-family:var(--mono);font-size:10px;color:#5a8a5a;letter-spacing:1px;margin-bottom:3px;display:flex;justify-content:space-between;}
-.xp-bar-label .xp-lv{color:#88cc88;font-size:12px;font-weight:bold;}
-.xp-bar-label .xp-pts{color:#3a5a3a;font-size:9px;}
-.xp-track{height:6px;background:#050a05;border-radius:2px;overflow:hidden;border:1px solid #1a3a1a;}
-.xp-fill{height:100%;border-radius:2px;transition:width .6s cubic-bezier(.4,0,.2,1);background:linear-gradient(90deg,#1a4a1a 0%,#44aa44 55%,#88ff88 100%);}
-.xp-levelup-flash{animation:xp-pulse 0.8s ease-out;}
-@keyframes xp-pulse{0%{background:linear-gradient(90deg,#88ff88,#ffffff,#88ff88);}100%{background:linear-gradient(90deg,#1a4a1a,#44aa44,#88ff88);}}
-.ap-regen-timer{font-family:var(--mono);font-size:10px;color:#555;text-align:right;margin-top:3px;}
-.ap-regen-timer.ready{color:var(--green);animation:pulse .8s infinite;}
-
-/* ── Hunger / Thirst as vertical bar blocks ── */
-.hstat-need{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:6px 10px;border-right:1px solid #222;min-width:58px;gap:3px;}
-.need-val{font-family:'Bebas Neue',sans-serif;font-size:22px;line-height:1;}
-.need-lbl{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:#555;text-transform:uppercase;}
-.need-track{width:36px;height:5px;background:#0a0a0a;border-radius:2px;overflow:hidden;border:1px solid #222;}
-.need-fill{height:100%;border-radius:2px;transition:width .4s;}
-.need-fill.ok  {background:var(--green);}
-.need-fill.warn{background:var(--amber);}
-.need-fill.crit{background:var(--blood-bright);animation:pulse .7s infinite;}
-.hstat-need.ok   .need-val{color:var(--green);}
-.hstat-need.warn .need-val{color:var(--amber);}
-.hstat-need.crit .need-val{color:var(--blood-bright);}
-
-/* ── Time/Day block — clear and prominent ── */
-.hstat-time{
-  padding:6px 14px;border-right:1px solid #222;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  min-width:90px;gap:2px;
-}
-.time-day{font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:2px;color:#555;line-height:1;}
-.time-clock{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:3px;color:#CEC9C0;line-height:1;}
-.time-light{font-family:var(--mono);font-size:10px;color:#555;margin-top:1px;}
-
-/* ── Location — takes remaining space, pushed right ── */
-.hstat-loc{flex:1;padding:6px 16px;overflow:hidden;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;text-align:right;}
-.loc-name{font-family:'Bebas Neue',sans-serif;font-size:24px;color:#E8E0D0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;letter-spacing:2px;}
-.loc-type{font-family:var(--mono);font-size:11px;color:#666;margin-top:2px;}
-
-/* Tab bar — bigger, clearer icons */
-.tab-bar{display:flex;background:#090909;border-bottom:1px solid #1a1a1a;flex-shrink:0;}
-.tab-btn{flex:1;padding:10px 2px 8px;font-family:var(--mono);font-size:10px;letter-spacing:.3px;color:#555;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;-webkit-appearance:none;line-height:1.3;}
-.tab-btn:hover{color:#999;}
-.tab-btn.active{color:var(--amber);border-bottom-color:var(--amber);}
-
-/* Main panels */
-.game-body{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;}
-.tab-panel{display:none;flex:1;overflow:hidden;flex-direction:column;min-height:0;}
-.tab-panel.active{display:flex;}
-
-/* ═══════════════════════════════════════════════════════════════
-   MAIN TAB — MILITARY HUD  |  2-Column Layout
-   ┌──────────────────────┬──────────────┐
-   │   ZONE MAP  (left)   │ STATUS (right│
-   │   3×3 grid           │ HP/AP/Vitals │
-   │   + tile strip below │ Threats      │
-   │                      │ Mini-map     │
-   ├──────────────────────┴──────────────┤
-   │   ACTION BAR (full width)           │
-   └─────────────────────────────────────┘
-   ═══════════════════════════════════════════════════════════════ */
-
-/* Outer shell */
-.main-layout{
-  flex:1;overflow:hidden;
-  display:flex;flex-direction:column;
-  background:#060606;
-}
-
-/* ─── TOP ROW: 2 columns ─── */
-.main-top-row{
-  flex:1;min-height:0;
-  display:flex;
-}
-
-/* ══════════════════════════════
-   LEFT — ZONE MAP COLUMN
-   ══════════════════════════════ */
-.gw-section{
-  flex:1;min-width:0;
-  display:flex;flex-direction:column;
-  border-right:1px solid #1c1c1c;
-  background:#070707;
-  position:relative;overflow:hidden;
-}
-
-/* scanline texture */
-.gw-section::before{
-  content:'';pointer-events:none;
-  position:absolute;inset:0;z-index:2;
-  background:repeating-linear-gradient(
-    0deg,
-    transparent,transparent 3px,
-    rgba(0,0,0,.07) 3px,rgba(0,0,0,.07) 4px
-  );
-}
-
-.gw-label{
-  font-family:var(--mono);font-size:7px;letter-spacing:3px;color:#181818;
-  text-transform:uppercase;padding:5px 8px 3px;flex-shrink:0;
-  border-bottom:1px solid #0f0f0f;
-}
-
-/* Zone grid — 3×3, large cells */
-.gw-grid{
-  flex:1;
-  display:grid;
-  grid-template-columns:repeat(3,1fr);
-  grid-template-rows:repeat(3,1fr);
-  gap:3px;
-  padding:8px;
-  align-items:stretch;
-}
-.gw-cell{
-  background:#090909;border:1px solid #181818;
-  display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  position:relative;transition:border-color .15s,background .15s,box-shadow .15s;
-  cursor:default;overflow:hidden;min-height:0;
-}
-.gw-cell.gw-moveable{
-  cursor:pointer;border-color:#1f1f1f;
-  background:linear-gradient(145deg,#090909,#0c0c0c);
-}
-.gw-cell.gw-moveable:hover{
-  border-color:#383838;background:#0f0f0f;
-  box-shadow:inset 0 0 14px rgba(240,192,0,.05);
-}
-.gw-cell.gw-moveable.gw-danger{
-  border-color:rgba(192,57,43,.4);
-  background:rgba(10,4,4,1);
-}
-.gw-cell.gw-moveable.gw-danger:hover{border-color:rgba(192,57,43,.7);}
-.gw-cell.gw-moveable.gw-cant{opacity:.22;pointer-events:none;}
-.gw-cell.gw-player{
-  background:rgba(122,21,21,.14);
-  border:1px solid var(--blood);
-  box-shadow:inset 0 0 18px rgba(192,57,43,.1),0 0 6px rgba(192,57,43,.06);
-}
-.gw-cell.gw-unexplored{
-  background:#050505;border-style:dashed;border-color:#111;
-}
-.gw-cell.gw-outbounds{background:#040404;border-color:#090909;pointer-events:none;}
-
-.gw-tile-icon{font-size:32px;line-height:1;filter:drop-shadow(0 2px 6px rgba(0,0,0,.9));}
-.gw-overlay{
-  position:absolute;top:3px;right:3px;
-  display:flex;flex-direction:column;align-items:flex-end;gap:2px;z-index:3;
-}
-.gw-z-badge{
-  font-family:var(--mono);font-size:7px;
-  background:rgba(192,57,43,.3);color:var(--blood-bright);
-  padding:1px 4px;line-height:1.5;letter-spacing:.5px;
-}
-.gw-dir-arrow{
-  position:absolute;bottom:4px;left:50%;transform:translateX(-50%);
-  font-family:var(--mono);font-size:12px;color:#1c1c1c;
-  transition:color .15s,text-shadow .15s;pointer-events:none;z-index:3;
-}
-.gw-cell.gw-moveable:hover .gw-dir-arrow{
-  color:var(--amber);
-  text-shadow:0 0 10px rgba(240,192,0,.5);
-}
-.gw-fog{
-  position:absolute;inset:0;z-index:1;
-  background:repeating-linear-gradient(
-    45deg,transparent,transparent 4px,
-    rgba(0,0,0,.22) 4px,rgba(0,0,0,.22) 5px
-  );
-  pointer-events:none;
-}
-
-/* Tile info strip — below the grid */
-.zone-tile-strip{
-  flex-shrink:0;border-top:1px solid #141414;
-  padding:7px 10px 8px;background:#080808;
-  display:flex;align-items:center;gap:10px;min-height:44px;
-  position:relative;
-}
-.zone-tile-strip::before{
-  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;
-  background:linear-gradient(180deg,var(--amber),transparent);
-  opacity:.6;
-}
-.zts-icon{font-size:22px;flex-shrink:0;}
-.zts-body{flex:1;min-width:0;}
-.zts-name{
-  font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;
-  color:#DDD5C0;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.zts-meta{
-  font-family:var(--mono);font-size:8px;color:#333;
-  display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;
-}
-.zts-threat{font-weight:700;letter-spacing:.5px;}
-.zts-threat.none{color:var(--green);}
-.zts-threat.low{color:var(--amber);}
-.zts-threat.high{color:var(--blood-bright);animation:pulse .9s infinite;}
-
-/* ── TILE STRIP MINI BADGES ── */
-.zts-mini-badge{
-  font-family:var(--mono);font-size:7px;padding:1px 4px;
-  border-radius:2px;letter-spacing:.5px;font-weight:700;
-}
-.zts-mini-badge.bari{background:rgba(240,192,0,.1);color:var(--amber);border:1px solid rgba(240,192,0,.25);}
-.zts-mini-badge.noise-lo{background:rgba(240,192,0,.08);color:#888;border:1px solid #222;}
-.zts-mini-badge.noise-hi{background:rgba(192,57,43,.15);color:var(--blood-bright);border:1px solid rgba(192,57,43,.3);animation:pulse .8s infinite;}
-.zts-mini-badge.rumor{background:rgba(79,195,247,.1);color:#4FC3F7;border:1px solid rgba(79,195,247,.25);}
-
-/* ── NOISE METER in status panel ── */
-.srt-noise-block{
-  padding:5px 8px 6px;border-bottom:1px solid #111;
-}
-.srt-noise-hdr{
-  display:flex;justify-content:space-between;align-items:center;
-  font-family:var(--mono);font-size:8px;color:#555;margin-bottom:3px;
-}
-.srt-noise-track{
-  height:4px;background:#111;border-radius:2px;overflow:hidden;
-}
-.srt-noise-fill{
-  height:100%;border-radius:2px;transition:width .4s ease;
-}
-.srt-noise-fill.ok   { background:var(--green); }
-.srt-noise-fill.warn { background:var(--amber); }
-.srt-noise-fill.crit { background:var(--blood-bright);animation:noiseFlicker .4s infinite; }
-@keyframes noiseFlicker{0%,100%{opacity:1}50%{opacity:.5}}
-.srt-val.ok   { color:var(--green);   font-family:var(--mono);font-size:8px; }
-.srt-val.warn { color:var(--amber);   font-family:var(--mono);font-size:8px; }
-.srt-val.crit { color:var(--blood-bright); font-family:var(--mono);font-size:8px;animation:pulse .6s infinite; }
-
-/* ── BASE EVENT BANNER in threats ── */
-.srt-event-banner{
-  background:rgba(192,57,43,.12)!important;
-  border-radius:2px;
-}
-
-/* ── RUMOR TARGET in radio popup ── */
-.radio-rumor-target{
-  display:flex;align-items:center;gap:8px;
-  background:#0a0a00;border:1px solid rgba(240,192,0,.15);
-  border-radius:3px;padding:8px 10px;margin:8px 0;
-}
-
-/* ── TILE PANEL INLINE — vật thể trong tile hiện tại ── */
-.tile-panel-inline{
-  flex:1;overflow-y:auto;min-height:0;
-  background:#060606;border-top:1px solid #111;
-}
-.tile-panel-inline::-webkit-scrollbar{width:2px;}
-.tile-panel-inline::-webkit-scrollbar-thumb{background:#1e1e1e;}
-.tpi-empty{
-  font-family:var(--mono);font-size:8px;color:#1a1a1a;
-  padding:10px 12px;letter-spacing:1px;
-}
-/* Compact object cards inside inline panel */
-.tile-panel-inline .obj-card{
-  display:flex;align-items:center;gap:8px;
-  padding:7px 10px;border-bottom:1px solid #0d0d0d;
-  cursor:pointer;transition:background .1s;
-  background:#060606;
-}
-.tile-panel-inline .obj-card:hover{background:#0c0c0c;}
-.tile-panel-inline .obj-card.enemy-alive{
-  border-left:2px solid var(--blood);
-  background:rgba(192,57,43,.04);
-}
-.tile-panel-inline .obj-card.enemy-alive:hover{background:rgba(192,57,43,.08);}
-.tile-panel-inline .obj-icon{font-size:16px;flex-shrink:0;width:22px;text-align:center;}
-.tile-panel-inline .obj-info{flex:1;min-width:0;}
-.tile-panel-inline .obj-name{
-  font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;
-  color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.tile-panel-inline .obj-meta{
-  font-family:var(--mono);font-size:8px;color:#333;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.tile-panel-inline .obj-badge{
-  font-family:var(--mono);font-size:8px;padding:2px 5px;
-  border-radius:2px;flex-shrink:0;white-space:nowrap;
-}
-.tile-panel-inline .obj-badge.danger{
-  background:rgba(192,57,43,.15);color:var(--blood-bright);
-  border:1px solid rgba(192,57,43,.3);
-}
-.tile-panel-inline .obj-badge.neutral{
-  background:#0d0d0d;color:#444;border:1px solid #1c1c1c;
-}
-.tile-panel-inline .obj-badge.npc{
-  background:rgba(100,180,100,.1);color:#5DD462;
-  border:1px solid rgba(100,180,100,.2);
-}
-
-
-/* ══════════════════════════════
-   RIGHT — STATUS COLUMN
-   ══════════════════════════════ */
-.status-right-col{
-  width:168px;flex-shrink:0;
-  display:flex;flex-direction:column;
-  background:#070707;
-  border-left:1px solid #1a1a1a;
-  overflow:hidden;
-}
-
-/* Generic section header */
-.sr-hdr{
-  font-family:var(--mono);font-size:7px;letter-spacing:2.5px;color:#1e1e1e;
-  text-transform:uppercase;padding:5px 9px 3px;
-  border-bottom:1px solid #101010;flex-shrink:0;
-  display:flex;align-items:center;gap:5px;
-}
-.sr-hdr::before{
-  content:'';width:4px;height:4px;flex-shrink:0;
-  background:var(--amber);opacity:.5;
-  clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);
-}
-
-/* ── VITALS BLOCK ── */
-.sr-vitals{
-  flex-shrink:0;padding:7px 9px;
-  display:flex;flex-direction:column;gap:5px;
-  border-bottom:1px solid #101010;
-}
-.svr-row{display:flex;align-items:center;gap:5px;}
-.svr-icon{font-size:10px;width:14px;text-align:center;flex-shrink:0;line-height:1;}
-.svr-bar{
-  flex:1;height:5px;background:#0d0d0d;
-  overflow:hidden;border:1px solid #171717;
-}
-.svr-fill{
-  height:100%;transition:width .45s cubic-bezier(.4,0,.2,1);
-}
-.svr-fill.ok  {background:linear-gradient(90deg,#1a4d1c,#38a83b);}
-.svr-fill.warn{background:linear-gradient(90deg,#5c3a00,#c88000);}
-.svr-fill.crit{background:linear-gradient(90deg,#5a0c0c,var(--blood-bright));animation:pulse .75s infinite;}
-.svr-val{
-  font-family:'Bebas Neue',sans-serif;font-size:14px;line-height:1;
-  min-width:28px;text-align:right;flex-shrink:0;
-}
-.svr-val.ok{color:#38a83b;}
-.svr-val.warn{color:#c88000;}
-.svr-val.crit{color:var(--blood-bright);}
-
-/* ── AP DOTS ── */
-.sr-ap{
-  flex-shrink:0;padding:6px 9px;
-  border-bottom:1px solid #101010;
-}
-.sr-ap-lbl{
-  font-family:var(--mono);font-size:7px;color:#1e1e1e;
-  text-transform:uppercase;letter-spacing:2px;
-  display:flex;justify-content:space-between;margin-bottom:5px;
-}
-.sr-ap-lbl em{font-style:normal;color:#383838;}
-.shud-ap-dots{display:flex;gap:3px;flex-wrap:wrap;}
-.ap-dot{
-  width:8px;height:8px;flex-shrink:0;
-  background:linear-gradient(135deg,#9a6000,var(--amber));
-  clip-path:polygon(50% 0%,100% 50%,50% 100%,0% 50%);
-  transition:opacity .1s;
-}
-.ap-dot.empty{
-  background:#151515;border:1px solid #1f1f1f;
-  clip-path:none;
-}
-
-/* ── THREATS ── */
-.sr-threats{
-  flex-shrink:0;padding:5px 9px;
-  border-bottom:1px solid #101010;
-  display:flex;flex-direction:column;gap:3px;
-}
-.srt-row{
-  font-family:var(--mono);font-size:9px;
-  display:flex;justify-content:space-between;align-items:center;
-}
-.srt-row.clear{color:#222;}
-.srt-row.near{color:var(--amber);}
-.srt-row.danger{color:var(--blood-bright);}
-.srt-badge{
-  font-size:8px;padding:1px 4px;letter-spacing:.5px;
-}
-.srt-badge.boss{
-  background:rgba(192,57,43,.2);color:var(--blood-bright);
-  border:1px solid rgba(192,57,43,.3);animation:pulse .8s infinite;
-}
-
-/* ── MINI MAP ── */
-.sr-minimap{
-  flex-shrink:0;padding:5px 8px 7px;
-  border-bottom:1px solid #101010;
-}
-.mmp-title{
-  font-family:var(--mono);font-size:7px;letter-spacing:2px;
-  color:#1a1a1a;text-transform:uppercase;
-  margin-bottom:4px;text-align:center;
-}
-.mmp-grid{
-  display:grid;grid-template-columns:repeat(7,1fr);
-  gap:2px;
-}
-.mmp-cell{
-  background:#0b0b0b;aspect-ratio:1;
-  display:flex;align-items:center;justify-content:center;
-  font-size:7px;border:1px solid #0f0f0f;overflow:hidden;
-}
-.mmp-cell.mmp-player{background:rgba(122,21,21,.3);border-color:var(--blood);}
-.mmp-cell.mmp-explored{background:#0e0e0e;}
-.mmp-cell.mmp-unexplored{background:#060606;}
-.mmp-cell.mmp-boss{border-color:var(--blood-bright);animation:pulse .8s infinite;}
-
-/* ── BASE INFO ── */
-.sr-baseinfo{
-  flex:1;overflow:hidden;padding:5px 9px;
-  display:flex;flex-direction:column;gap:3px;
-}
-.sri-row{
-  font-family:var(--mono);font-size:9px;color:#1e1e1e;
-  display:flex;justify-content:space-between;
-}
-.sri-row span:last-child{color:#363636;}
-
-/* Hide old HUD elements — data moved to status col */
-.hud-row{display:none;}
-.survival-hud{display:none;}
-.mini-map-panel{display:none;}
-
-/* ══════════════════════════════
-   BOTTOM — ACTION BAR
-   ══════════════════════════════ */
-.ctx-actions-bar{
-  flex-shrink:0;
-  background:#060606;
-  border-top:1px solid #1c1c1c;
-  padding:0 8px 6px;
-  display:flex;gap:5px;flex-wrap:wrap;align-items:flex-end;
-  min-height:50px;
-  position:relative;
-}
-.ctx-actions-bar::before{
-  content:'// HÀNH ĐỘNG';
-  display:block;
-  font-family:var(--mono);font-size:7px;letter-spacing:3px;color:#1a1a1a;
-  width:100%;flex-basis:100%;padding-top:5px;padding-bottom:3px;
-}
-.ctx-lbl{display:none;}
-
-.ctx-btn{
-  background:#0a0a0a;border:1px solid #202020;color:#555;
-  font-family:var(--mono);font-size:10px;
-  padding:8px 13px;cursor:pointer;-webkit-appearance:none;
-  transition:all .12s;letter-spacing:.4px;line-height:1;
-  white-space:nowrap;position:relative;
-}
-.ctx-btn::after{
-  content:'';position:absolute;bottom:0;left:0;right:0;
-  height:1px;background:transparent;transition:background .12s;
-}
-.ctx-btn:hover:not(:disabled){
-  border-color:#383838;color:#C5BCAB;background:#0d0d0d;
-}
-.ctx-btn:hover:not(:disabled)::after{background:#282828;}
-.ctx-btn:disabled{opacity:.2;cursor:not-allowed;}
-.ctx-btn.ctx-danger{
-  border-left:2px solid rgba(192,57,43,.6);
-  color:#7a3030;
-}
-.ctx-btn.ctx-danger:hover{
-  border-color:var(--blood);color:var(--blood-bright);
-  background:rgba(10,3,3,1);
-}
-.ctx-btn.ctx-primary{
-  border-color:#252300;color:#8a7400;
-}
-.ctx-btn.ctx-primary:hover{
-  background:#0c0b00;border-color:var(--amber);color:var(--amber);
-  box-shadow:0 0 10px rgba(240,192,0,.06);
-}
-
-/* ── KEEP OLD CLASSES (prevent crashes) ── */
-.tile-panel{ /* now rendered inline in gw-section via .tile-panel-inline */ }
-.right-panel{display:none;}
-.stats-mini{display:none;}
-.dir-section{display:none;}
-.actions-section{display:none;}
-
-/* Tile header: colored threat bar on left edge */
-.tile-header{padding:10px 12px 8px;border-bottom:1px solid #181818;flex-shrink:0;position:relative;}
-.tile-header.threat-none{border-left:3px solid var(--green);}
-.tile-header.threat-low {border-left:3px solid var(--amber);}
-.tile-header.threat-high{border-left:3px solid var(--blood-bright);}
-.tile-icon-row{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
-.tile-big-icon{font-size:26px;line-height:1;opacity:.9;}
-.tile-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;line-height:1;}
-.tile-meta{font-family:var(--mono);font-size:8px;color:#555;letter-spacing:.5px;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap;}
-.tile-meta .z-count{font-weight:bold;}
-
-/* AI description chatbox — big, readable, high contrast */
-.tile-desc{
-  font-size:14px;color:#E8E0D0;line-height:1.9;
-  padding:14px 16px 12px;border-bottom:2px solid #222;
-  font-style:italic;
-  background:linear-gradient(135deg,rgba(30,25,15,.95),rgba(15,12,8,.95));
-  border-left:3px solid var(--amber);
-  min-height:72px;
-  letter-spacing:.3px;
-}
-.tile-desc.loading{color:#444;font-style:italic;}
-
-/* Tile title bigger */
-.tile-title{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;line-height:1;color:#F0EAE0;}
-.tile-meta{font-family:var(--mono);font-size:11px;color:#666;letter-spacing:.5px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;}
-.tile-meta .z-count{font-weight:bold;}
-.tile-big-icon{font-size:30px;line-height:1;opacity:.95;}
-
-/* Object section header */
-.obj-section{padding:6px 10px 3px;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
-.obj-section-title{font-family:var(--mono);font-size:8px;letter-spacing:2px;color:#333;text-transform:uppercase;}
-
-/* Object cards — Torn-style with left stripe */
-.obj-list{display:flex;flex-direction:column;gap:3px;padding:0 8px 8px;}
-.obj-card{
-  background:#0f0f0f;border:1px solid #1c1c1c;
-  padding:10px 12px;cursor:pointer;
-  display:flex;align-items:center;gap:10px;
-  transition:border-color .12s,background .12s;
-  position:relative;overflow:hidden;
-}
-.obj-card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#1e1e1e;}
-.obj-card:hover{border-color:#333;background:#131313;}
-.obj-card:hover::before{background:#444;}
-.obj-card.enemy{border-color:#2a1010;}
-.obj-card.enemy::before{background:var(--blood);}
-.obj-card.enemy:hover{border-color:var(--blood);}
-.obj-card.enemy-alive{animation:threatPulse 2.5s ease-in-out infinite;}
-.obj-card.looted{opacity:.3;cursor:default;}
-.obj-card.looted:hover{border-color:#1c1c1c;background:#0f0f0f;}
-.obj-card.npc-card::before{background:var(--blue);}
-.obj-card.special-card::before{background:var(--amber);}
-@keyframes threatPulse{0%,100%{border-color:#2a1010}50%{border-color:#5a1515}}
-.obj-icon{font-size:22px;flex-shrink:0;width:28px;text-align:center;line-height:1;}
-.obj-info{flex:1;min-width:0;}
-.obj-name{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;color:#CEC9C0;line-height:1.2;}
-.obj-meta{font-family:var(--mono);font-size:10px;color:#555;margin-top:2px;}
-.obj-badge{font-family:var(--mono);font-size:10px;padding:3px 7px;flex-shrink:0;letter-spacing:.5px;}
-.obj-badge.danger{background:rgba(212,64,48,.18);color:var(--blood-bright);border:1px solid rgba(212,64,48,.3);}
-.obj-badge.neutral{background:rgba(240,192,0,.08);color:var(--amber);border:1px solid rgba(240,192,0,.2);}
-.obj-badge.npc{background:rgba(92,208,255,.08);color:var(--blue);border:1px solid rgba(92,208,255,.2);}
-.obj-badge.special{background:rgba(240,192,0,.08);color:var(--amber);border:1px solid rgba(240,192,0,.2);}
-
-/* Right panel — wider for better readability */
-.right-panel{width:210px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;background:#090909;border-left:1px solid #1a1a1a;}
-.right-panel::-webkit-scrollbar{width:2px;}
-
-/* Direction pad — Torn grid style */
-/* ── ENVIRONMENT SCANNER ── */
-.dir-section{padding:6px;border-bottom:1px solid #141414;}
-.dir-label{font-family:var(--mono);font-size:7px;letter-spacing:2px;color:#333;margin-bottom:5px;text-transform:uppercase;}
-
-/* Scanner header: label + global noise/movement */
-.scan-header{
-  display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:5px;
-}
-.scan-title{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:#444;}
-.scan-global{display:flex;gap:6px;}
-.scan-global-item{font-family:var(--mono);font-size:9px;letter-spacing:1px;}
-.scan-global-item.warn{color:var(--blood-bright);}
-.scan-global-item.ok{color:#444;}
-.scan-global-item.amber{color:var(--amber);}
-
-/* 3x3 scan grid — mỗi cell là 1 tile xung quanh */
-.scan-grid{
-  display:grid;
-  grid-template-columns:1fr 44px 1fr; /* side | center | side */
-  grid-template-rows:1fr 44px 1fr;
-  gap:2px;
-}
-
-/* Center cell — YOU */
-.scan-you{
-  grid-column:2;grid-row:2;
-  background:rgba(122,21,21,.2);border:1px solid var(--blood);
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  font-family:var(--mono);font-size:9px;
-}
-.scan-you-dot{
-  width:8px;height:8px;border-radius:50%;
-  background:var(--blood-bright);
-  box-shadow:0 0 6px var(--blood-bright);
-  margin-bottom:2px;
-}
-
-/* Corner cells — kosong */
-.scan-corner{background:transparent;}
-
-/* Direction cells — N/S/E/W */
-.scan-cell{
-  background:#0d0d0d;border:1px solid #1c1c1c;
-  display:flex;flex-direction:column;
-  padding:4px 5px;
-  cursor:pointer;position:relative;
-  transition:border-color .12s,background .12s;
-  min-height:48px;overflow:hidden;
-}
-.scan-cell:hover{border-color:#3a3a3a;background:#111;}
-.scan-cell.cant-afford{opacity:.35;pointer-events:none;}
-.scan-cell.unexplored{border-style:dashed;border-color:#1e1e1e;}
-.scan-cell.danger{border-color:rgba(212,64,48,.4);}
-
-/* Tile name — top of cell */
-.scan-name{
-  font-family:var(--mono);font-size:8px;letter-spacing:.5px;
-  color:#999;line-height:1.2;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  max-width:100%;
-}
-.scan-name.unknown{color:#2a2a2a;}
-
-/* Tile icon large */
-.scan-icon{font-size:15px;line-height:1;margin:2px 0 1px;}
-
-/* Threat tags row */
-.scan-tags{display:flex;flex-wrap:wrap;gap:2px;margin-top:2px;}
-.scan-tag{
-  font-family:var(--mono);font-size:7px;letter-spacing:.5px;
-  padding:1px 3px;line-height:1.4;
-}
-.scan-tag.z{background:rgba(192,57,43,.25);color:var(--blood-bright);}
-.scan-tag.noise{background:rgba(232,184,0,.15);color:var(--amber);}
-.scan-tag.safe{color:#2a2a2a;}
-.scan-tag.ap{color:#444;}
-
-/* Direction arrow — bottom right */
-.scan-dir-arrow{
-  position:absolute;bottom:3px;right:4px;
-  font-size:10px;color:#222;
-  transition:color .12s;
-}
-.scan-cell:hover .scan-dir-arrow{color:var(--amber);}
-
-/* Unexplored fog */
-.scan-fog{
-  position:absolute;inset:0;
-  background:repeating-linear-gradient(
-    45deg,transparent,transparent 3px,rgba(0,0,0,.3) 3px,rgba(0,0,0,.3) 4px
-  );
-  pointer-events:none;
-}
-
-/* Action buttons */
-.actions-section{padding:6px;border-bottom:1px solid #141414;}
-.action-btn{
-  width:100%;background:#0d0d0d;border:1px solid #1a1a1a;
-  color:#888;font-family:var(--mono);font-size:10px;
-  padding:8px 9px;cursor:pointer;margin-bottom:3px;
-  -webkit-appearance:none;text-align:left;
-  display:flex;justify-content:space-between;align-items:center;
-  transition:border-color .1s,color .1s;
-}
-.action-btn:hover:not(:disabled){border-color:#444;color:#CEC9C0;}
-.action-btn .cost{font-size:9px;color:#555;}
-.action-btn:disabled{opacity:.25;cursor:not-allowed;}
-
-/* Stats mini — segmented bars */
-.stats-mini{padding:8px 7px;flex:1;}
-.stat-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
-.stat-lbl{font-family:var(--mono);font-size:9px;color:#555;letter-spacing:.5px;text-transform:uppercase;width:46px;flex-shrink:0;}
-.stat-val{font-family:'Bebas Neue',sans-serif;font-size:14px;}
-.stat-val.ok{color:var(--green);}  .stat-val.warn{color:var(--amber);}  .stat-val.crit{color:var(--blood-bright);}
-.mini-track{height:4px;background:#111;border-radius:1px;overflow:hidden;flex:1;margin:0 4px;border:1px solid #1a1a1a;}
-.mini-fill{height:100%;border-radius:1px;transition:width .3s;}
-.mini-fill.ok{background:var(--green);}
-.mini-fill.warn{background:var(--amber);}
-.mini-fill.crit{background:var(--blood-bright);}
-
-/* ── MAP TAB OLD (keep for compat) ── */
-.map-panel-inner{display:none;}
-.world-map-grid{display:none;}
-.map-legend{display:none;}
-
-/* ══════════════════════════════════════════════
-   WORLD MAP SCREEN — Full biome map with fog of war
-   ══════════════════════════════════════════════ */
-.wm-screen{
-  flex:1;display:flex;flex-direction:column;overflow:hidden;
-  background:#050505;
-}
-.wm-topbar{
-  display:flex;align-items:center;gap:10px;
-  padding:5px 10px;border-bottom:1px solid #141414;
-  flex-shrink:0;background:#080808;
-  font-family:var(--mono);font-size:9px;letter-spacing:1px;
-}
-.wm-title{color:#2a2a2a;flex:1;}
-.wm-coords{color:#444;}
-.wm-day{color:var(--amber);}
-.wm-viewport{
-  flex:1;overflow:auto;
-  display:flex;align-items:flex-start;justify-content:flex-start;
-  padding:8px;
-}
-.wm-viewport::-webkit-scrollbar{width:3px;height:3px;}
-.wm-viewport::-webkit-scrollbar-thumb{background:#1a1a1a;}
-.wm-grid{
-  display:inline-grid;
-  grid-template-columns:repeat(30, 24px);
-  gap:1px;
-  flex-shrink:0;
-}
-/* Fog states */
-.wm-cell{
-  width:24px;height:24px;
-  display:flex;align-items:center;justify-content:center;
-  font-size:9px;border:1px solid transparent;
-  cursor:default;position:relative;
-  transition:border-color .1s,background .1s;
-  overflow:hidden;
-}
-/* Unexplored — dense fog pattern */
-.wm-cell.wm-fog{
-  background:#050505;border-color:#0a0a0a;
-  color:#0f0f0f;font-size:9px;
-}
-.wm-cell.wm-fog::after{
-  content:'';position:absolute;inset:0;
-  background:repeating-linear-gradient(
-    45deg,rgba(0,0,0,.8),rgba(0,0,0,.8) 2px,rgba(0,0,0,.3) 2px,rgba(0,0,0,.3) 4px
-  );
-  pointer-events:none;
-}
-/* Explored/dim — strong desaturation */
-.wm-cell.wm-dim{
-  border-color:#111;
-  filter:brightness(0.3) saturate(0.1);
-}
-/* Visible — in current sight radius */
-.wm-cell.wm-visible{
-  background:#0d0d0d;border-color:#1e1e1e;
-}
-/* Player cell */
-.wm-cell.wm-player{
-  background:rgba(122,21,21,.25);
-  border-color:var(--blood)!important;
-  z-index:2;
-}
-/* Moveable cells */
-.wm-cell.wm-moveable{cursor:pointer;}
-.wm-cell.wm-moveable:hover{
-  border-color:#555;background:#1a1a1a!important;
-  filter:none;
-}
-.wm-cell.wm-moveable.wm-danger:hover{border-color:rgba(212,64,48,.6);}
-.wm-cell.wm-impassable{cursor:not-allowed;opacity:.5;}
-/* Boss cell */
-.wm-cell.wm-boss{
-  border-color:var(--blood-bright)!important;
-  background:rgba(192,57,43,.2)!important;
-  animation:pulse .8s infinite;
-}
-/* Danger zone */
-.wm-cell.wm-danger-zone{
-  background:rgba(180,60,0,.12);border-color:rgba(180,60,0,.25);
-}
-/* Special / landmark — subtle amber border */
-.wm-cell.wm-landmark{border-color:#2a2200!important;}
-.wm-cell.wm-landmark.wm-visible{border-color:#3a3000!important;}
-.wm-cell.wm-landmark:hover{border-color:var(--amber)!important;}
-
-/* ── TERRAIN COLORS — màu nền thay icon ── */
-/* Đường lớn: nâu đất */
-.wm-cell.wm-road{background:#2e261c;border-color:#3a2f20;}
-/* Đường phố: xám nâu tối */
-.wm-cell.wm-street{background:#1e1a14;border-color:#2a2418;}
-/* Sông: xanh đậm */
-.wm-cell.wm-river{background:rgba(0,35,70,.6);border-color:#0a2a50;}
-/* Forest: xanh lá tối */
-.wm-cell.wm-forest{background:#0d1a0a;border-color:#152212;}
-/* Field: xanh vàng */
-.wm-cell.wm-field{background:#141a08;border-color:#1e2610;}
-/* Park */
-.wm-cell.wm-park{background:#0f1a0c;border-color:#182014;}
-
-/* Marker dot on player tile */
-.wm-player-dot{
-  position:absolute;width:6px;height:6px;border-radius:50%;
-  background:var(--blood-bright);
-  box-shadow:0 0 5px var(--blood-bright);
-  animation:pulse .7s infinite;
-  pointer-events:none;z-index:3;
-}
-/* AP cost label */
-.wm-cell-ap{
-  position:absolute;bottom:1px;right:2px;
-  font-family:var(--mono);font-size:6px;color:#333;line-height:1;
-  pointer-events:none;
-}
-.wm-cell.wm-moveable:hover .wm-cell-ap{color:var(--amber);}
-/* Zombie badge — dot style */
-.wm-z{
-  position:absolute;top:1px;right:1px;
-  font-size:7px;color:var(--blood-bright);
-  line-height:1;pointer-events:none;
-  font-family:var(--mono);
-}
-/* Terrain icon — nhỏ và mờ */
-.wm-terrain-icon{
-  font-size:9px;opacity:0.7;line-height:1;
-  pointer-events:none;
-}
-/* Building icon — rõ hơn */
-.wm-building-icon{
-  font-size:10px;opacity:0.9;line-height:1;
-  pointer-events:none;
-}
-/* Legend */
-.wm-legend{
-  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
-  padding:4px 8px;border-top:1px solid #141414;
-  background:#080808;flex-shrink:0;
-  font-family:var(--mono);font-size:8px;color:#444;
-}
-.wm-legend-item{display:flex;align-items:center;gap:3px;}
-.wm-legend-dot{width:8px;height:8px;border-radius:1px;flex-shrink:0;border:1px solid transparent;}
-/* Scroll-to-player button */
-.wm-center-btn{
-  flex-shrink:0;font-family:var(--mono);font-size:8px;color:#444;
-  background:none;border:1px solid #1a1a1a;padding:3px 8px;
-  cursor:pointer;-webkit-appearance:none;
-  transition:color .1s,border-color .1s;
-  margin-left:auto;
-}
-.wm-center-btn:hover{color:var(--amber);border-color:var(--amber);}
-
-/* ══════════════════════════════════════════════
-   LOCATION ENTRY POPUP
-   ══════════════════════════════════════════════ */
-.entry-popup-overlay{
-  position:fixed;inset:0;z-index:180;
-  display:none;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.75);backdrop-filter:blur(3px);
-  padding:16px;
-}
-.entry-popup-overlay.show{display:flex;}
-.entry-popup-box{
-  background:#0f0f0f;border:1px solid #2a2a2a;
-  border-top:2px solid var(--amber);
-  width:100%;max-width:380px;
-  animation:popupIn .2s ease;
-  box-shadow:0 20px 60px rgba(0,0,0,.9), 0 0 20px rgba(240,192,0,.04);
-}
-.entry-popup-header{
-  padding:14px 16px 10px;border-bottom:1px solid #1a1a1a;
-  display:flex;align-items:center;gap:10px;
-}
-.entry-popup-icon{font-size:30px;flex-shrink:0;}
-.entry-popup-name{
-  flex:1;
-  font-family:'Bebas Neue',sans-serif;font-size:22px;
-  letter-spacing:2px;color:var(--amber);line-height:1;
-}
-.entry-popup-type{
-  font-family:var(--mono);font-size:9px;color:#444;
-  letter-spacing:1px;margin-top:2px;
-}
-.entry-popup-body{padding:12px 16px;}
-.entry-popup-desc{
-  font-family:var(--mono);font-size:11px;color:#888;
-  line-height:1.7;margin-bottom:12px;
-  border-left:2px solid #222;padding-left:10px;
-}
-.entry-popup-stats{
-  display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;
-}
-.entry-stat{
-  font-family:var(--mono);font-size:9px;
-  padding:3px 8px;background:#0a0a0a;border:1px solid #1e1e1e;
-}
-.entry-stat.danger{color:var(--blood-bright);border-color:#2a1010;}
-.entry-stat.safe{color:var(--green);border-color:#0a2a0a;}
-.entry-stat.neutral{color:var(--amber);border-color:#2a2800;}
-.entry-popup-btns{display:flex;gap:6px;}
-.entry-btn{
-  flex:1;background:#0a0a0a;
-  font-family:'Bebas Neue',sans-serif;font-size:18px;
-  letter-spacing:2px;padding:12px;cursor:pointer;-webkit-appearance:none;
-  transition:border-color .1s,background .1s;
-}
-.entry-btn.enter{border:1px solid var(--amber);color:var(--amber);}
-.entry-btn.enter:hover{background:#0e0d00;border-color:#ffe066;}
-.entry-btn.skip{border:1px solid #1e1e1e;color:#555;}
-.entry-btn.skip:hover{border-color:#444;color:#999;}
-  transition:border-color .1s;line-height:1.1;
-}
-.map-cell.unexplored{background:#080808;color:#1a1a1a;}
-.map-cell.explored{background:#0f0f0f;border-color:#1c1c1c;}
-.map-cell.player{background:rgba(122,21,21,.3);border:1px solid var(--blood)!important;}
-.map-cell.key-loc{border-color:#2a2800;}
-.map-cell-icon{font-size:11px;line-height:1;}
-.map-cell-z{font-size:6px;color:var(--blood-bright);}
-.map-legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;font-family:var(--mono);font-size:8px;color:#444;}
-/* Boss cell */
-.map-cell.has-boss{border-color:var(--blood-bright)!important;background:rgba(192,57,43,.18);}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-.blinking{animation:pulse .8s infinite;}
-
-/* ── LOG TAB — color-coded entries ── */
-.log-list{flex:1;overflow-y:auto;padding:4px;}
-.log-list::-webkit-scrollbar{width:2px;}
-.log-entry{
-  border-bottom:1px solid #111;padding:8px 10px;
-  font-size:13px;line-height:1.6;position:relative;
-}
-.log-entry::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;}
-.log-entry.combat::before{background:var(--blood-bright);}
-.log-entry.loot::before{background:var(--amber);}
-.log-entry.danger::before{background:#FF6B35;}
-.log-entry.move::before{background:#333;}
-.log-entry.info::before{background:#222;}
-.log-entry.story::before{background:var(--blue);}
-.log-time{font-family:var(--mono);font-size:9px;color:#444;margin-bottom:2px;}
-.log-msg{color:#999;}
-.log-entry.combat .log-msg{color:#CEC9C0;}
-.log-entry.danger .log-msg{color:#FF8C00;}
-.log-entry.loot   .log-msg{color:#D4B800;}
-.log-entry.story  .log-msg{color:var(--blue);}
-
-/* ── LOG SUB-TABS ── */
-.log-subtab-bar{display:flex;border-bottom:1px solid #1a1a1a;background:#090909;flex-shrink:0;}
-.log-subtab-btn{flex:1;padding:8px 4px;font-family:var(--mono);font-size:10px;letter-spacing:.5px;color:#555;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;-webkit-appearance:none;}
-.log-subtab-btn.active{color:var(--amber);border-bottom-color:var(--amber);}
-.log-subtab-btn:hover{color:#888;}
-.log-subpanel{display:none;flex:1;overflow:hidden;flex-direction:column;}
-.log-subpanel.active{display:flex;}
-/* Story log placeholder */
-.story-empty{text-align:center;padding:40px 20px;font-family:var(--mono);font-size:11px;color:#2a2a2a;line-height:2;}
-
-/* ── INVENTORY TAB — category strips ── */
-.inv-list{flex:1;overflow-y:auto;}
-.inv-list::-webkit-scrollbar{width:2px;}
-.inv-item{
-  display:flex;align-items:center;gap:8px;
-  padding:10px 12px;border-bottom:1px solid #111;
-  cursor:default;position:relative;
-}
-.inv-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;}
-.inv-item.type-medical::before{background:#27AE60;}
-.inv-item.type-food::before{background:#E67E22;}
-.inv-item.type-weapon::before{background:var(--blood-bright);}
-.inv-item.type-tool::before{background:var(--blue);}
-.inv-item.type-material::before{background:#666;}
-.inv-item.type-ammo::before{background:var(--amber);}
-.inv-item:hover{background:#0d0d0d;}
-.inv-icon{font-size:20px;flex-shrink:0;width:24px;text-align:center;}
-.inv-name{flex:1;font-size:14px;color:#CEC9C0;line-height:1.3;min-width:0;}
-.inv-name .inv-tag{font-family:var(--mono);font-size:9px;color:#666;display:block;margin-top:1px;}
-.inv-btn{font-family:var(--mono);font-size:10px;padding:4px 8px;border:1px solid;cursor:pointer;-webkit-appearance:none;background:none;flex-shrink:0;}
-.inv-btn.use{color:#27AE60;border-color:#1a3a1a;}
-.inv-btn.use:hover{background:rgba(39,174,96,.1);}
-.inv-btn.equip{color:var(--blue);border-color:#0a2030;}
-.inv-btn.equip:hover{background:rgba(92,208,255,.1);}
-.inv-btn.drop{color:#444;border-color:#1a1a1a;}
-.inv-btn.drop:hover{color:#888;border-color:#333;}
-.inv-weight{font-family:var(--mono);font-size:10px;color:#555;flex-shrink:0;min-width:32px;text-align:right;}
-.inv-header{padding:8px 12px;font-family:var(--mono);font-size:11px;color:#555;border-bottom:1px solid #1a1a1a;display:flex;justify-content:space-between;}
-.inv-header .weight-warn{color:var(--blood-bright);}
-.inv-empty{text-align:center;padding:40px 20px;font-family:var(--mono);font-size:11px;color:#2a2a2a;line-height:2;}
-
-/* ── ACTION POPUP — centered modal ── */
-.popup-overlay{
-  position:fixed;inset:0;z-index:100;
-  display:none;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.75);
-  backdrop-filter:blur(3px);
-  padding:16px;
-}
-.popup-overlay.show{display:flex;}
-.popup-box{
-  background:#111;border:1px solid #333;
-  width:100%;max-width:520px;max-height:85vh;
-  overflow-y:auto;
-  border-radius:2px;
-  box-shadow:0 20px 60px rgba(0,0,0,.8);
-  animation:popupIn .2s ease;
-}
-@keyframes popupIn{from{transform:scale(.96) translateY(10px);opacity:0}to{transform:none;opacity:1}}
-
-/* ══════════════════════════════════════════════
-   BASE TAB — Top-down safehouse view
-   ══════════════════════════════════════════════ */
-.base-screen{
-  flex:1;display:flex;flex-direction:column;overflow:hidden;
-  background:#050505;
-}
-/* Top HUD bar */
-.base-hud-bar{
-  flex-shrink:0;padding:5px 10px;
-  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-  border-bottom:1px solid #141414;background:#080808;
-  font-family:var(--mono);font-size:9px;letter-spacing:.5px;
-}
-.base-hud-name{
-  font-family:'Bebas Neue',sans-serif;font-size:16px;
-  letter-spacing:2px;color:var(--amber);
-}
-.base-hud-lvl{color:#444;font-size:8px;}
-.base-hud-stat{display:flex;align-items:center;gap:4px;}
-.base-hud-stat span.val{color:#CEC9C0;}
-.base-hud-stat span.icon{font-size:11px;}
-.base-hud-divider{color:#1e1e1e;}
-.base-hud-threat{
-  margin-left:auto;font-size:8px;letter-spacing:1px;
-  padding:2px 8px;border:1px solid currentColor;
-}
-/* Viewport */
-.base-viewport{
-  flex:1;overflow:auto;display:flex;
-  align-items:flex-start;justify-content:center;
-  padding:10px;background:#050505;
-}
-.base-viewport::-webkit-scrollbar{width:3px;height:3px;}
-.base-viewport::-webkit-scrollbar-thumb{background:#1a1a1a;}
-.base-map-wrap{position:relative;display:inline-block;}
-.base-overlay-btns{
-  position:absolute;top:-24px;right:0;
-  display:flex;gap:4px;z-index:5;
-}
-.base-overlay-btn{
-  font-family:var(--mono);font-size:7px;letter-spacing:1px;color:#444;
-  background:#050505;border:1px solid #1a1a1a;padding:2px 8px;
-  cursor:pointer;-webkit-appearance:none;transition:all .1s;
-}
-.base-overlay-btn:hover{color:#888;border-color:#333;}
-.base-overlay-btn.active{color:var(--amber);border-color:var(--amber);}
-/* Base grid */
-.base-grid{
-  display:inline-grid;gap:1px;
-  image-rendering:pixelated;
-}
-/* Base cell */
-.base-cell{
-  width:36px;height:36px;
-  display:flex;align-items:center;justify-content:center;
-  font-size:16px;border:1px solid transparent;
-  cursor:default;position:relative;transition:all .1s;overflow:hidden;
-  background:#060606;
-}
-/* Terrain cells around base */
-.base-cell.bc-forest{background:#060c06;border-color:#0c150c;}
-.base-cell.bc-rock  {background:#0a0a0a;border-color:#141414;}
-.base-cell.bc-grass {background:#080a06;border-color:#111310;}
-.base-cell.bc-cleared{background:#0d0c08;border-color:#1e1c12;}
-.base-cell.bc-farm  {background:#090d06;border-color:#141e0c;}
-/* Wall/structure cells */
-.base-cell.bc-wall  {background:#0c0c0c;border-color:#222;}
-.base-cell.bc-door  {background:#0e0b08;border-color:#2a2010;}
-.base-cell.bc-floor {background:#0a0a0a;border-color:#181818;}
-/* Room zone overlays */
-.base-cell.bz-bedroom  {background:rgba(20,40,80,.35)!important;border-color:#1a2a4a!important;}
-.base-cell.bz-workshop {background:rgba(60,30,0,.35)!important;border-color:#3a2010!important;}
-.base-cell.bz-kitchen  {background:rgba(10,40,15,.35)!important;border-color:#1a3a1a!important;}
-.base-cell.bz-defense  {background:rgba(60,10,10,.35)!important;border-color:#3a1010!important;}
-.base-cell.bz-storage  {background:rgba(30,30,5,.35)!important;border-color:#3a3a10!important;}
-/* Defense overlay — entry point markers */
-.base-cell.bd-entry{border-color:var(--blood)!important;background:rgba(192,57,43,.15)!important;}
-.base-cell.bd-entry::after{
-  content:'!';position:absolute;top:0;right:2px;
-  font-size:8px;color:var(--blood-bright);font-family:var(--mono);
-}
-/* Clickable terrain */
-.base-cell.bc-clickable{cursor:pointer;}
-.base-cell.bc-clickable:hover{border-color:#3a3a3a;background:#101010;}
-/* Lighting overlay — night mode dim */
-.base-cell.bc-dark{filter:brightness(.25);}
-.base-cell.bc-lit {filter:brightness(1.1);}
-.base-cell.bc-dim {filter:brightness(.6);}
-/* Light glow source */
-.base-cell.bc-lightsrc::before{
-  content:'';position:absolute;inset:0;
-  background:radial-gradient(circle, rgba(255,180,50,.08) 0%, transparent 70%);
-  pointer-events:none;z-index:1;
-}
-/* Radio blink */
-.base-cell.bc-radio-blink .bc-icon{animation:radioBlink .7s infinite;}
-@keyframes radioBlink{0%,100%{opacity:1}50%{opacity:.2}}
-/* Room label badge */
-.bc-room-badge{
-  position:absolute;bottom:0;left:0;right:0;
-  font-family:var(--mono);font-size:5px;letter-spacing:.5px;
-  text-align:center;padding:0 1px;line-height:1.4;
-  pointer-events:none;opacity:.7;
-}
-/* Ghost preview cell */
-.base-cell.bc-ghost{
-  opacity:.5;border:1px dashed #444!important;
-  background:#0e0e0e!important;
-  animation:ghostPulse .8s infinite;
-}
-@keyframes ghostPulse{0%,100%{opacity:.4}50%{opacity:.7}}
-/* Actions bar */
-.base-actions-bar{
-  flex-shrink:0;padding:6px 8px;
-  display:flex;gap:5px;flex-wrap:wrap;align-items:center;
-  border-top:1px solid #141414;background:#080808;min-height:44px;
-}
-.base-act-btn{
-  font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;
-  letter-spacing:1px;padding:7px 12px;cursor:pointer;-webkit-appearance:none;
-  background:#0a0a0a;border:1px solid #1e1e1e;color:#888;
-  transition:all .1s;
-}
-.base-act-btn:hover:not(:disabled){border-color:#444;color:#CEC9C0;background:#111;}
-.base-act-btn:disabled{opacity:.25;cursor:not-allowed;}
-.base-act-btn.primary{border-color:#2a2800;color:var(--amber);}
-.base-act-btn.primary:hover{background:#0e0d00;border-color:var(--amber);}
-.base-act-btn.danger{border-left:2px solid var(--blood);color:#CC4444;}
-.base-act-btn.danger:hover{border-color:var(--blood-bright);}
-/* Farm action popup */
-.base-farm-popup{
-  position:absolute;z-index:20;
-  background:#0f0f0f;border:1px solid #2a2a2a;
-  border-top:2px solid var(--green);
-  padding:8px;min-width:130px;
-  font-family:var(--mono);font-size:11px;
-  animation:popupIn .15s ease;
-}
-.base-farm-btn{
-  display:block;width:100%;text-align:left;
-  padding:6px 8px;background:none;border:none;border-bottom:1px solid #1a1a1a;
-  color:#888;cursor:pointer;font-family:var(--mono);font-size:11px;
-  transition:color .1s;
-}
-.base-farm-btn:last-child{border-bottom:none;}
-.base-farm-btn:hover{color:#CEC9C0;}
-
-/* ── GO HOME BUTTON (context action bar) ── */
-.go-home-btn-inline{
-  margin-left:auto;flex-shrink:0;
-  font-family:'Bebas Neue',sans-serif;font-size:16px;
-  letter-spacing:2px;padding:7px 16px;cursor:pointer;-webkit-appearance:none;
-  background:#0a0a0a;border:1px solid #2a2800;color:var(--amber);
-  display:flex;align-items:center;gap:6px;
-  transition:all .15s;animation:homeGlow 2s infinite;
-}
-.go-home-btn-inline:hover{background:#0e0d00;border-color:var(--amber);}
-@keyframes homeGlow{
-  0%,100%{box-shadow:0 0 0 transparent}
-  50%{box-shadow:0 0 6px rgba(240,192,0,.2)}
-}
-/* ── GO HOME CONFIRM POPUP ── */
-.go-home-overlay{
-  position:fixed;inset:0;z-index:200;
-  display:none;align-items:center;justify-content:center;
-  background:rgba(0,0,0,.8);backdrop-filter:blur(4px);
-}
-.go-home-overlay.show{display:flex;}
-.go-home-box{
-  background:#0f0f0f;border:1px solid #2a2a2a;
-  border-top:2px solid var(--amber);
-  text-align:center;padding:28px 32px;
-  min-width:260px;animation:popupIn .2s ease;
-  box-shadow:0 20px 60px rgba(0,0,0,.9);
-}
-.go-home-icon{font-size:36px;margin-bottom:8px;}
-.go-home-title{
-  font-family:'Bebas Neue',sans-serif;font-size:28px;
-  letter-spacing:3px;color:var(--amber);margin-bottom:4px;
-}
-.go-home-info{
-  font-family:var(--mono);font-size:10px;color:#555;
-  margin-bottom:6px;
-}
-.go-home-cost{
-  font-family:'Rajdhani',sans-serif;font-weight:700;font-size:18px;
-  color:#CEC9C0;margin-bottom:16px;
-}
-.go-home-cost span{color:var(--amber);font-size:24px;}
-.go-home-btns{display:flex;gap:8px;}
-.go-home-btn{
-  flex:1;font-family:'Bebas Neue',sans-serif;font-size:20px;
-  letter-spacing:2px;padding:12px;cursor:pointer;-webkit-appearance:none;
-  transition:all .1s;
-}
-.go-home-btn.confirm{background:#0e0d00;border:1px solid var(--amber);color:var(--amber);}
-.go-home-btn.confirm:hover{background:#1a1800;}
-.go-home-btn.cancel{background:#0a0a0a;border:1px solid #1e1e1e;color:#555;}
-.go-home-btn.cancel:hover{border-color:#444;color:#999;}
-.popup-header{display:flex;align-items:center;gap:12px;padding:14px 16px 10px;border-bottom:1px solid #1e1e1e;position:sticky;top:0;background:#111;z-index:1;}
-.popup-icon{font-size:26px;}
-.popup-title{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;}
-.popup-meta{font-family:var(--mono);font-size:10px;color:#666;}
-.popup-close{margin-left:auto;font-family:var(--mono);font-size:10px;color:#555;cursor:pointer;padding:5px 10px;background:none;border:1px solid #1e1e1e;-webkit-appearance:none;transition:color .1s;white-space:nowrap;}
-.popup-close:hover{color:#CEC9C0;border-color:#444;}
-.popup-actions{padding:10px;}
-.popup-btn{
-  width:100%;background:#0d0d0d;border:1px solid #1e1e1e;
-  color:#CEC9C0;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:15px;
-  padding:13px 16px;cursor:pointer;margin-bottom:5px;
-  -webkit-appearance:none;display:flex;justify-content:space-between;align-items:center;
-  transition:border-color .1s,background .1s;
-}
-.popup-btn:hover:not(:disabled){border-color:#444;background:#131313;}
-.popup-btn:disabled{opacity:.25;cursor:not-allowed;}
-.popup-btn .pbcost{font-family:var(--mono);font-size:10px;color:#888;}
-.popup-btn.danger{border-left:2px solid var(--blood);}
-.popup-btn.danger:hover{border-color:var(--blood-bright);}
-.popup-result{
-  padding:12px 16px;font-size:14px;color:#CEC9C0;
-  border-top:1px solid #1e1e1e;line-height:1.7;min-height:40px;
-  font-family:var(--mono);
-  background:#0d0d0d;
-}
-
-/* ══════════════════════════════════════════════
-   COMBAT OVERLAY — Tactical AP Budget System
-   ══════════════════════════════════════════════ */
-.combat-overlay{
-  position:fixed;inset:0;z-index:250;
-  display:none;flex-direction:column;
-  background:rgba(0,0,0,.92);
-  backdrop-filter:blur(4px);
-}
-.combat-overlay.show{display:flex;}
-.cbt-enemy-bar{
-  flex-shrink:0;padding:10px 14px 8px;
-  background:#0a0808;border-bottom:2px solid var(--blood);
-  display:flex;align-items:center;gap:12px;
-}
-.cbt-enemy-icon{font-size:32px;line-height:1;flex-shrink:0;}
-.cbt-enemy-info{flex:1;min-width:0;}
-.cbt-enemy-name{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:2px;color:var(--blood-bright);line-height:1;}
-.cbt-enemy-meta{font-family:var(--mono);font-size:9px;color:#555;margin-top:2px;}
-.cbt-enemy-hp-wrap{flex-shrink:0;text-align:right;min-width:80px;}
-.cbt-enemy-hp-lbl{font-family:var(--mono);font-size:9px;color:#666;margin-bottom:3px;}
-.cbt-enemy-hp-track{height:8px;background:#1a0808;border:1px solid #2a1010;overflow:hidden;border-radius:1px;}
-.cbt-enemy-hp-fill{height:100%;background:linear-gradient(90deg,var(--blood),var(--blood-bright));transition:width .4s;}
-.cbt-arena{
-  flex:1;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;
-  padding:12px 16px;gap:10px;overflow-y:auto;
-}
-.cbt-ap-budget{
-  display:flex;align-items:center;gap:8px;
-  background:#0d0d0d;border:1px solid #222;
-  padding:8px 14px;width:100%;max-width:400px;
-}
-.cbt-ap-budget-lbl{font-family:var(--mono);font-size:9px;color:#555;letter-spacing:1px;flex-shrink:0;}
-.cbt-ap-dots{display:flex;gap:3px;flex:1;flex-wrap:wrap;}
-.cbt-ap-dot{width:9px;height:9px;border-radius:1px;flex-shrink:0;background:linear-gradient(135deg,#e6a800,var(--amber));}
-.cbt-ap-dot.spent{background:#1a1a1a;border:1px solid #252525;}
-.cbt-ap-budget-num{font-family:'Bebas Neue',sans-serif;font-size:18px;color:var(--amber);flex-shrink:0;min-width:36px;text-align:right;}
-.cbt-intent{
-  width:100%;max-width:400px;
-  background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.2);border-left:3px solid var(--blood-bright);
-  padding:7px 11px;font-family:var(--mono);font-size:10px;color:#CC7755;display:none;
-}
-.cbt-intent.show{display:block;}
-.cbt-intent-lbl{font-size:8px;color:#555;letter-spacing:1px;margin-bottom:2px;}
-.cbt-log{
-  width:100%;max-width:400px;min-height:52px;max-height:80px;overflow-y:auto;
-  background:#070707;border:1px solid #141414;padding:6px 10px;
-  font-family:var(--mono);font-size:11px;color:#888;line-height:1.6;
-}
-.cbt-log::-webkit-scrollbar{width:2px;}
-.cbt-log-entry{border-bottom:1px solid #111;padding:2px 0;}
-.cbt-log-entry.hit{color:var(--amber);}
-.cbt-log-entry.miss{color:var(--blood-bright);}
-.cbt-log-entry.kill{color:var(--green);}
-.cbt-log-entry.info{color:#555;}
-.cbt-actions{width:100%;max-width:400px;display:grid;grid-template-columns:1fr 1fr;gap:5px;}
-.cbt-action-btn{
-  background:#0d0d0d;border:1px solid #222;padding:10px 10px 8px;cursor:pointer;
-  -webkit-appearance:none;text-align:left;transition:border-color .1s,background .1s;
-  display:flex;flex-direction:column;gap:2px;position:relative;overflow:hidden;
-}
-.cbt-action-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:#1e1e1e;transition:background .15s;}
-.cbt-action-btn:hover:not(:disabled)::before{background:var(--amber);}
-.cbt-action-btn.danger::before{background:var(--blood);}
-.cbt-action-btn.danger:hover:not(:disabled)::before{background:var(--blood-bright);}
-.cbt-action-btn:hover:not(:disabled){border-color:#3a3a3a;background:#111;}
-.cbt-action-btn:disabled{opacity:.22;cursor:not-allowed;}
-.cbt-action-icon{font-size:18px;line-height:1;}
-.cbt-action-name{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:.5px;color:#CEC9C0;line-height:1;}
-.cbt-action-desc{font-family:var(--mono);font-size:8px;color:#555;line-height:1.3;margin-top:1px;}
-.cbt-action-cost{font-family:var(--mono);font-size:9px;color:var(--amber);margin-top:3px;}
-.cbt-action-cost.cant{color:var(--blood-bright);}
-.cbt-flee-btn{
-  grid-column:1/-1;background:#0a0808;border:1px solid #2a1010;color:#666;
-  font-family:var(--mono);font-size:10px;padding:9px 14px;cursor:pointer;-webkit-appearance:none;
-  display:flex;justify-content:space-between;align-items:center;transition:border-color .1s,color .1s;
-}
-.cbt-flee-btn:hover:not(:disabled){border-color:var(--blood);color:#AA4444;}
-.cbt-flee-btn:disabled{opacity:.25;cursor:not-allowed;}
-.cbt-player-bar{
-  flex-shrink:0;padding:7px 14px;background:#080808;border-top:1px solid #141414;
-  display:flex;align-items:center;gap:10px;
-}
-.cbt-player-lbl{font-family:var(--mono);font-size:9px;color:#555;flex-shrink:0;}
-.cbt-player-hp-track{flex:1;height:6px;background:#0a0a0a;border:1px solid #1a1a1a;overflow:hidden;border-radius:1px;}
-.cbt-player-hp-fill{height:100%;transition:width .4s;}
-.cbt-player-hp-fill.ok{background:linear-gradient(90deg,#2d6b30,var(--green));}
-.cbt-player-hp-fill.warn{background:linear-gradient(90deg,#8a6000,var(--amber));}
-.cbt-player-hp-fill.crit{background:linear-gradient(90deg,#7a1515,var(--blood-bright));animation:pulse .6s infinite;}
-.cbt-player-hp-num{font-family:'Bebas Neue',sans-serif;font-size:18px;color:#CEC9C0;flex-shrink:0;}
-.cbt-boss-phase{width:100%;max-width:400px;padding:5px 10px;font-family:var(--mono);font-size:9px;text-align:center;letter-spacing:1px;}
-
-/* ── ENEMY HP: số hiển thị rõ + flash khi bị hit ── */
-.cbt-enemy-hp-wrap{flex-shrink:0;text-align:right;min-width:110px;}
-.cbt-enemy-hp-lbl{
-  font-family:var(--mono);font-size:9px;color:#666;margin-bottom:3px;
-  display:flex;justify-content:space-between;align-items:center;
-}
-.cbt-enemy-hp-num{
-  font-family:'Bebas Neue',sans-serif;font-size:15px;
-  color:var(--blood-bright);letter-spacing:.5px;
-}
-.cbt-enemy-hp-track{
-  height:10px;background:#1a0808;border:1px solid #2a1010;
-  overflow:hidden;border-radius:1px;position:relative;
-}
-.cbt-enemy-hp-fill{
-  height:100%;
-  background:linear-gradient(90deg,var(--blood),var(--blood-bright));
-  transition:width .35s cubic-bezier(.4,0,.2,1);
-}
-@keyframes cbtDmgFlash{
-  0%{background:rgba(255,120,50,.5)}
-  100%{background:transparent}
-}
-.cbt-enemy-hp-track.flash{animation:cbtDmgFlash .4s ease-out;}
-
-/* ── ENEMY TYPE BADGE ── */
-.cbt-enemy-type{display:flex;align-items:center;gap:6px;margin-top:3px;flex-wrap:wrap;}
-.cbt-type-badge{
-  font-family:var(--mono);font-size:8px;letter-spacing:1px;
-  padding:2px 6px;border:1px solid;
-}
-.cbt-type-badge.normal {color:#444;border-color:#222;}
-.cbt-type-badge.screamer{color:var(--amber);border-color:rgba(240,192,0,.4);background:rgba(240,192,0,.05);}
-.cbt-type-badge.armored {color:var(--blue);border-color:rgba(92,208,255,.35);background:rgba(92,208,255,.04);}
-.cbt-type-badge.crawler {color:#b06be0;border-color:rgba(176,107,224,.35);background:rgba(176,107,224,.04);}
-.cbt-type-badge.horde   {color:var(--blood-bright);border-color:rgba(212,64,48,.35);background:rgba(212,64,48,.05);}
-.cbt-type-warn{
-  font-family:var(--mono);font-size:8px;color:var(--amber);
-  margin-top:2px;display:none;
-}
-.cbt-type-warn.show{display:block;}
-
-/* ── XP BAR ── */
-.cbt-xp-row{
-  width:100%;max-width:400px;
-  display:flex;align-items:center;gap:8px;
-  background:#070707;border:1px solid #111;
-  padding:5px 10px;position:relative;
-}
-.cbt-xp-lbl{font-family:var(--mono);font-size:8px;color:#333;letter-spacing:1px;flex-shrink:0;}
-.cbt-xp-track{flex:1;height:4px;background:#111;border:1px solid #181818;overflow:hidden;border-radius:1px;}
-.cbt-xp-fill{height:100%;background:linear-gradient(90deg,#1a3a80,#5CD0FF);transition:width .6s cubic-bezier(.4,0,.2,1);}
-.cbt-xp-num{font-family:'Bebas Neue',sans-serif;font-size:12px;color:#5CD0FF;flex-shrink:0;letter-spacing:.5px;}
-/* XP gain floating popup */
-@keyframes xpFloat{
-  0%  {opacity:0;transform:translateY(0) scale(.85)}
-  20% {opacity:1;transform:translateY(-4px) scale(1.1)}
-  80% {opacity:1;transform:translateY(-12px) scale(1)}
-  100%{opacity:0;transform:translateY(-20px) scale(.95)}
-}
-.cbt-xp-gain{
-  position:absolute;right:8px;top:-22px;pointer-events:none;
-  font-family:'Bebas Neue',sans-serif;font-size:16px;
-  color:#5CD0FF;letter-spacing:1px;
-  animation:xpFloat 1.4s ease-out forwards;
-}
-
-/* ── PLAYER HP SHAKE khi nhận dmg ── */
-@keyframes hpShake{
-  0%,100%{transform:none}
-  25%{transform:translateX(-3px)}
-  75%{transform:translateX(3px)}
-}
-.cbt-player-bar.dmg{animation:hpShake .22s ease-out;}
-
-/* ── FLEE WARNING ── */
-.cbt-flee-danger{
-  font-family:var(--mono);font-size:8px;color:var(--blood-bright);
-  opacity:0;transition:opacity .2s;
-}
-.cbt-flee-btn:hover .cbt-flee-danger{opacity:1;}
-
-/* ── LOOT / KILL POPUP ── */
-.cbt-kill-popup{
-  position:absolute;inset:0;z-index:5;
-  background:rgba(3,3,3,.95);
-  display:none;flex-direction:column;
-  align-items:center;justify-content:center;gap:10px;
-  padding:20px;
-}
-.cbt-kill-popup.show{display:flex;}
-.cbt-kill-title{
-  font-family:'Bebas Neue',sans-serif;font-size:36px;
-  letter-spacing:5px;color:var(--green);
-  text-shadow:0 0 20px rgba(93,212,98,.3);
-  animation:popupIn .25s ease;
-}
-.cbt-kill-xp{
-  font-family:'Bebas Neue',sans-serif;font-size:26px;
-  letter-spacing:3px;color:#5CD0FF;
-}
-.cbt-kill-loot{
-  display:flex;gap:8px;flex-wrap:wrap;justify-content:center;
-  max-width:360px;
-}
-.cbt-kill-item{
-  background:#0d0d0d;border:1px solid #2a2a2a;border-top:2px solid var(--amber);
-  padding:8px 14px;display:flex;flex-direction:column;align-items:center;gap:4px;
-  animation:popupIn .3s ease;
-}
-.cbt-kill-item-icon{font-size:22px;}
-.cbt-kill-item-name{font-family:var(--mono);font-size:9px;color:#888;}
-.cbt-kill-empty{font-family:var(--mono);font-size:10px;color:#222;}
-.cbt-kill-close{
-  margin-top:6px;font-family:var(--mono);font-size:10px;
-  color:#555;background:none;border:1px solid #2a2a2a;
-  padding:7px 24px;cursor:pointer;-webkit-appearance:none;
-  transition:color .1s,border-color .1s;letter-spacing:1px;
-}
-.cbt-kill-close:hover{color:#CEC9C0;border-color:#555;}
-
-/* ── NOTIFICATIONS — slide right ── */
-.notif{
-  position:fixed;top:50px;right:0;z-index:200;
-  background:#111;border-left:3px solid var(--amber);
-  border-top:1px solid #2a2a2a;border-bottom:1px solid #2a2a2a;
-  padding:8px 14px;max-width:240px;
-  font-size:11px;pointer-events:none;
-  font-family:var(--mono);
-  animation:notifSlide .25s ease;
-  transition:opacity .4s;
-}
-.notif.success{border-left-color:var(--green);}
-.notif.danger{border-left-color:var(--blood-bright);}
-@keyframes notifSlide{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
-
-/* ── INTRO OVERLAY ── */
-.intro-overlay{position:fixed;inset:0;background:#0a0a0a;z-index:300;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;}
-.intro-title{font-family:'Bebas Neue',sans-serif;font-size:48px;letter-spacing:8px;color:var(--blood-bright);}
-.intro-msg{font-family:var(--mono);font-size:10px;color:#444;letter-spacing:2px;}
-
-/* ── API KEY section removed — using Cloudflare Worker proxy ── */
-
-/* ── RESPONSIVE ── */
-@media(min-width:700px){
-  .right-panel{width:230px;}
-}
-@media(max-width:480px){
-  .right-panel{width:170px;}
-  .scan-cell{min-height:38px;}
-  .time-clock{font-size:20px;}
-  .hstat-time{min-width:72px;padding:6px 8px;}
-  .hstat-need{min-width:48px;padding:6px 7px;}
-  /* Fix 5: sk-name không tràn màn hình nhỏ */
-  .sk-name{font-size:10px;white-space:normal;line-height:1.2;}
-  .sk-node{padding:5px 6px 4px;}
-}
-
-/* ══════════════════════════════════════════════
-   EQUIPMENT TAB — FULL PAPER DOLL
-   ┌─────────────┬──────────────────┐
-   │ Paper Doll  │  Inventory Grid  │
-   │ HEAD        │  4-col grid      │
-   │ WPN | BODY  │                  │
-   │ HND |      │                  │
-   │ FEET| TOOL  │                  │
-   │ Stats below │                  │
-   └─────────────┴──────────────────┘
-   ══════════════════════════════════════════════ */
-
-.equip-screen{
-  flex:1;display:flex;overflow:hidden;min-height:0;height:100%;
-}
-
-/* ── LEFT: Doll column ── */
-.equip-doll-col{
-  width:194px;flex-shrink:0;
-  display:flex;flex-direction:column;
-  border-right:1px solid #1c1c1c;
-  background:#080808;
-  overflow-y:auto;
-}
-.equip-doll-col::-webkit-scrollbar{width:2px;}
-
-.equip-doll-figure{
-  padding:10px 8px 8px;
-  display:flex;flex-direction:column;align-items:center;
-  border-bottom:1px solid #141414;
-  flex-shrink:0;
-}
-.equip-char-name{
-  font-family:'Bebas Neue',sans-serif;font-size:14px;
-  letter-spacing:3px;color:#383838;margin-bottom:8px;
-  text-align:center;
-}
-
-/* 3-col paper doll grid */
-.equip-paper-doll{
-  display:grid;
-  grid-template-columns:56px 60px 56px;
-  gap:3px;
-  width:175px;
-}
-
-/* Slot base */
-.doll-slot{
-  background:#0c0c0c;border:1px solid #1e1e1e;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  cursor:pointer;transition:border-color .15s,background .15s;
-  padding:5px 3px;min-height:52px;
-  position:relative;overflow:hidden;
-}
-.doll-slot::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:transparent;transition:background .15s;
-}
-.doll-slot:hover{border-color:#3a3a3a;background:#111;}
-.doll-slot:hover::before{background:#2a2a2a;}
-.doll-slot.filled{border-color:#2e2600;background:#0c0a00;}
-.doll-slot.filled::before{background:var(--amber);opacity:.4;}
-.doll-slot.filled:hover{border-color:#6a5a00;background:#0e0c00;}
-.doll-slot.broken{border-color:rgba(192,57,43,.5);background:rgba(10,3,3,1);}
-.doll-slot.broken::before{background:var(--blood-bright);}
-.doll-slot.spacer{
-  background:transparent;border-color:transparent;
-  pointer-events:none;cursor:default;
-}
-.doll-slot.spacer:hover{background:transparent;border-color:transparent;}
-.doll-slot.spacer::before{display:none;}
-
-/* Slot type accent colors */
-.doll-slot[data-slot="head"]  .doll-slot-icon{filter:drop-shadow(0 0 4px rgba(92,208,255,.15));}
-.doll-slot[data-slot="body"]  .doll-slot-icon{filter:drop-shadow(0 0 4px rgba(92,208,255,.15));}
-.doll-slot[data-slot="weapon"].doll-slot-icon{filter:drop-shadow(0 0 4px rgba(212,64,48,.15));}
-.doll-slot[data-slot="hands"] .doll-slot-icon{filter:drop-shadow(0 0 4px rgba(240,192,0,.1));}
-.doll-slot[data-slot="feet"]  .doll-slot-icon{filter:drop-shadow(0 0 4px rgba(240,192,0,.1));}
-.doll-slot[data-slot="tool"]  .doll-slot-icon{filter:drop-shadow(0 0 4px rgba(85,196,90,.1));}
-
-.doll-slot-icon{font-size:20px;line-height:1;margin-bottom:2px;}
-.doll-slot-label{font-family:var(--mono);font-size:7px;color:#2e2e2e;letter-spacing:.5px;text-transform:uppercase;text-align:center;}
-.doll-slot-name{font-family:var(--mono);font-size:7px;color:#AAA499;text-align:center;line-height:1.3;margin-top:2px;max-width:50px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.doll-slot-dur{height:2px;width:85%;background:#080808;overflow:hidden;margin-top:3px;}
-.doll-slot-dur-fill{height:100%;transition:width .3s;}
-.doll-dur-warn{position:absolute;top:2px;right:3px;font-size:8px;animation:pulse .6s infinite;}
-
-/* Stats below doll */
-.equip-stats-compact{
-  padding:8px 10px;
-  display:flex;flex-direction:column;gap:4px;
-  flex-shrink:0;
-}
-.equip-stats-hdr{
-  font-family:var(--mono);font-size:7px;letter-spacing:2px;color:#1e1e1e;
-  text-transform:uppercase;margin-bottom:2px;border-bottom:1px solid #111;padding-bottom:3px;
-}
-.equip-stat-row{
-  display:flex;justify-content:space-between;align-items:center;
-  font-family:var(--mono);font-size:9px;
-}
-.equip-stat-k{color:#383838;}
-.equip-stat-v{color:var(--amber);}
-.equip-stat-v.good{color:#38a83b;}
-.equip-stat-v.bad{color:#1e1e1e;}
-
-/* ── RIGHT COLUMN: inventory grid ── */
-.equip-bag-col{
-  flex:1;display:flex;flex-direction:column;
-  overflow:hidden;min-height:0;
-  background:#090909;
-}
-
-/* Bag header */
-.equip-bag-hdr{
-  padding:9px 12px;border-bottom:1px solid #1e1e1e;
-  display:flex;justify-content:space-between;align-items:center;
-  flex-shrink:0;background:#0a0a0a;
-}
-.equip-bag-title{font-family:var(--mono);font-size:11px;color:#666;letter-spacing:1px;}
-.equip-bag-weight{font-family:var(--mono);font-size:11px;}
-
-/* Grid of item cells — 4 columns */
-.equip-grid{
-  flex:1;overflow-y:auto;
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:3px;
-  padding:8px;
-  align-content:start;
-}
-.equip-grid::-webkit-scrollbar{width:2px;}
-
-/* Single item cell in grid */
-.equip-grid-cell{
-  background:#0d0d0d;border:1px solid #1c1c1c;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:8px 4px 6px;cursor:pointer;
-  transition:border-color .12s,background .12s;
-  position:relative;min-height:70px;
-}
-.equip-grid-cell:hover{border-color:#3a3a3a;background:#111;}
-/* Color stripe by type */
-.equip-grid-cell::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;}
-.equip-grid-cell.type-weapon::before{background:var(--blood-bright);}
-.equip-grid-cell.type-armor::before{background:var(--blue);}
-.equip-grid-cell.type-medical::before{background:var(--green);}
-.equip-grid-cell.type-food::before{background:#E67E22;}
-.equip-grid-cell.type-tool::before{background:var(--amber);}
-.equip-grid-cell.type-material::before{background:#555;}
-.equip-grid-cell.type-ammo::before{background:var(--amber);}
-
-.grid-icon{font-size:26px;line-height:1;margin-bottom:4px;}
-.grid-name{font-family:var(--mono);font-size:8px;color:#999;text-align:center;line-height:1.3;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.grid-qty{position:absolute;bottom:3px;right:4px;font-family:'Bebas Neue',sans-serif;font-size:11px;color:#666;}
-
-/* Inline action strip — appears on click, not hover (mobile-friendly) */
-.equip-grid-cell.selected{border-color:var(--amber);background:#0e0d00;}
-.grid-actions{
-  position:absolute;bottom:0;left:0;right:0;
-  display:flex;flex-direction:row;
-  background:rgba(10,10,0,.9);border-top:1px solid #2a2200;
-  opacity:0;transition:opacity .15s;
-}
-.equip-grid-cell:hover .grid-actions,
-.equip-grid-cell.selected .grid-actions{opacity:1;}
-.grid-act-btn{
-  flex:1;font-family:var(--mono);font-size:8px;padding:4px 2px;
-  border:none;background:none;cursor:pointer;-webkit-appearance:none;
-  transition:background .1s;letter-spacing:.3px;
-}
-.grid-act-btn:hover{background:rgba(255,255,255,.06);}
-.grid-act-btn.act-use{color:#44dd44;font-weight:700;}
-.grid-act-btn.act-equip{color:#4FC3F7;font-weight:700;}
-.grid-act-btn.act-drop{color:#666;}
-.grid-act-btn:hover.act-use{background:rgba(68,221,68,.1);}
-.grid-act-btn:hover.act-equip{background:rgba(79,195,247,.1);}
-.grid-act-btn:hover.act-drop{background:rgba(192,57,43,.1);color:var(--blood-bright);}
-
-/* Empty grid placeholder */
-.grid-empty{
-  grid-column:1/-1;text-align:center;padding:40px 20px;
-  font-family:var(--mono);font-size:11px;color:#1e1e1e;line-height:2;
-}
-
-/* Dur bar keep */
-.dur-bar-wrap{margin-top:5px;}
-.dur-bar-label{font-family:var(--mono);font-size:9px;display:flex;justify-content:space-between;margin-bottom:2px;}
-.dur-track{height:3px;background:#111;overflow:hidden;}
-.dur-fill{height:100%;transition:width .3s;}
-.dur-fill.full{background:var(--green);}
-.dur-fill.mid{background:var(--amber);}
-.dur-fill.low{background:var(--blood-bright);}
-.dur-fill.crit{background:var(--blood-bright);animation:pulse .6s infinite;}
-
-/* ── CRAFTING TAB ── */
-.craft-header{padding:8px 12px;border-bottom:1px solid #141414;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
-.craft-list{flex:1;overflow-y:auto;padding:6px 8px;}
-.craft-list::-webkit-scrollbar{width:2px;}
-.craft-card{background:#0d0d0d;border:1px solid #1c1c1c;padding:10px;margin-bottom:5px;cursor:pointer;transition:border-color .15s;position:relative;}
-.craft-card.can-craft{border-left:2px solid var(--amber);}
-.craft-card.can-craft:hover{border-color:var(--amber);}
-.craft-card.locked{opacity:.4;cursor:not-allowed;}
-.craft-top{display:flex;align-items:center;gap:10px;margin-bottom:5px;}
-.craft-recipe-icon{font-size:22px;flex-shrink:0;}
-.craft-recipe-name{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:1px;color:#CEC9C0;}
-.craft-recipe-desc{font-family:var(--mono);font-size:10px;color:#555;line-height:1.4;}
-.craft-ingredients{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;}
-.craft-ing{font-family:var(--mono);font-size:9px;padding:2px 6px;}
-.craft-ing.have{background:rgba(85,196,90,.08);color:var(--green);border:1px solid #1a3a1a;}
-.craft-ing.need{background:rgba(192,57,43,.08);color:var(--blood-bright);border:1px solid #2a1010;}
-.craft-ing.skill-need{background:rgba(92,208,255,.08);color:var(--blue);border:1px solid #0a2030;}
-.craft-btn{position:absolute;right:8px;bottom:8px;font-family:var(--mono);font-size:10px;padding:4px 9px;border:1px solid var(--amber);color:var(--amber);background:rgba(240,192,0,.04);cursor:pointer;-webkit-appearance:none;}
-.craft-btn:disabled{opacity:.25;cursor:not-allowed;border-color:#222;color:#222;}
-.craft-ap-cost{font-family:var(--mono);font-size:9px;color:#555;margin-top:4px;}
-
-/* Status strip */
-.status-strip{display:flex;gap:3px;flex-wrap:wrap;padding:4px 10px;border-bottom:1px solid #141414;min-height:24px;background:#090909;flex-shrink:0;}
-.status-badge{font-family:var(--mono);font-size:10px;padding:2px 7px;display:flex;align-items:center;gap:3px;}
-
-/* Boss UI */
-.boss-warning{background:rgba(212,64,48,.12);border:1px solid rgba(212,64,48,.3);padding:6px 12px;margin:5px 10px;font-family:var(--mono);font-size:10px;color:var(--blood-bright);text-align:center;animation:pulse .9s infinite;}
-.combat-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:10px;}
-.combat-opt{background:#0d0d0d;border:1px solid #1e1e1e;padding:11px 12px;cursor:pointer;-webkit-appearance:none;text-align:left;transition:border-color .1s,background .1s;}
-.combat-opt:hover:not(:disabled){border-color:#444;background:#111;}
-.combat-opt:disabled{opacity:.25;cursor:not-allowed;}
-.combat-opt.danger{border-left:2px solid var(--blood);}
-.combat-opt.danger:hover{border-color:var(--blood-bright);}
-.combat-opt-icon{font-size:20px;display:block;margin-bottom:3px;}
-.combat-opt-name{font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:.5px;color:#CEC9C0;}
-.combat-opt-desc{font-family:var(--mono);font-size:9px;color:#555;line-height:1.4;margin-top:3px;}
-.combat-opt-cost{font-family:var(--mono);font-size:10px;color:var(--amber);margin-top:4px;}
-.boss-hp-bar{padding:8px 16px 4px;border-top:1px solid #141414;}
-.boss-hp-label{font-family:var(--mono);font-size:10px;display:flex;justify-content:space-between;margin-bottom:4px;}
-.boss-hp-track{height:10px;background:#0a0a0a;border:1px solid #1a1a1a;overflow:hidden;}
-.boss-hp-fill{height:100%;transition:width .4s;background:linear-gradient(90deg,var(--blood-bright),#FF6B35);}
-.boss-phase{font-family:var(--mono);font-size:10px;text-align:center;padding:4px;margin-top:3px;}
-
-/* ── VISUAL ANIMATIONS ── */
-/* Tile icon breathe effect for alive enemies */
-@keyframes iconBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
-.obj-card.enemy-alive .obj-icon{animation:iconBreathe 2s ease-in-out infinite;}
-/* Glow pulse for boss cards */
-@keyframes bossGlow{0%,100%{box-shadow:0 0 0 rgba(212,64,48,0)}50%{box-shadow:0 0 12px rgba(212,64,48,.3)}}
-.obj-card.boss-card{animation:bossGlow 1.5s ease-in-out infinite,threatPulse 2.5s ease-in-out infinite;}
-/* Scan cell hover indicator */
-.scan-dir-arrow{position:absolute;bottom:3px;right:4px;font-family:var(--mono);font-size:10px;color:#2a2a2a;}
-.scan-cell:hover .scan-dir-arrow{color:var(--amber);}
-/* Smooth item drop animation */
-@keyframes itemFadeIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
-.inv-item{animation:itemFadeIn .15s ease;}
-
-/* ══════════════════════════════════════════════
-   RADIO SYSTEM
-   ══════════════════════════════════════════════ */
-.radio-btn{
-  display:flex;align-items:center;gap:5px;
-  padding:4px 10px 4px 8px;
-  background:none;border:none;cursor:pointer;
-  -webkit-appearance:none;flex-shrink:0;
-  position:relative;
-}
-.radio-icon{font-size:16px;transition:transform .3s;}
-.radio-label{font-family:var(--mono);font-size:9px;color:#444;letter-spacing:1px;transition:color .2s;}
-.radio-btn:hover .radio-label{color:#888;}
-.radio-btn.has-news .radio-label{color:var(--amber);animation:pulse .9s infinite;}
-.radio-btn.has-news .radio-icon{animation:radioSpin .6s ease-in-out;}
-.radio-pulse{
-  position:absolute;top:4px;right:8px;
-  width:6px;height:6px;border-radius:50%;
-  background:var(--blood-bright);
-  display:none;animation:pulse .6s infinite;
-}
-.radio-btn.has-news .radio-pulse{display:block;}
-@keyframes radioSpin{0%{transform:rotate(-12deg)}50%{transform:rotate(12deg)}100%{transform:rotate(0)}}
-
-/* Radio popup */
-.radio-popup-overlay{
-  position:fixed;inset:0;z-index:300;
-  display:none;align-items:flex-start;justify-content:flex-end;
-  padding:52px 8px 0;
-  pointer-events:none;
-}
-.radio-popup-overlay.show{display:flex;}
-.radio-popup-box{
-  background:#0f0f0f;
-  border:1px solid #2a2a00;
-  border-top:2px solid var(--amber);
-  width:100%;max-width:300px;
-  pointer-events:all;
-  box-shadow:0 8px 32px rgba(0,0,0,.8), 0 0 20px rgba(240,192,0,.04);
-  animation:radioSlideIn .25s cubic-bezier(.2,.8,.4,1);
-}
-@keyframes radioSlideIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
-.radio-popup-header{
-  padding:10px 12px 8px;
-  border-bottom:1px solid #1e1e00;
-  display:flex;align-items:center;gap:8px;
-}
-.radio-popup-icon{font-size:18px;}
-.radio-popup-title{font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:2px;color:var(--amber);flex:1;}
-.radio-popup-close{
-  font-family:var(--mono);font-size:9px;color:#444;
-  background:none;border:1px solid #222;padding:3px 7px;
-  cursor:pointer;-webkit-appearance:none;
-  transition:color .1s,border-color .1s;
-}
-.radio-popup-close:hover{color:#CEC9C0;border-color:#555;}
-.radio-popup-body{padding:12px;}
-.radio-signal-line{
-  display:flex;align-items:center;gap:6px;
-  font-family:var(--mono);font-size:8px;color:#444;
-  margin-bottom:10px;
-}
-.radio-signal-bars{display:flex;gap:2px;align-items:flex-end;}
-.radio-bar{width:3px;background:#2a2a2a;border-radius:1px;}
-.radio-bar.active{background:var(--amber);}
-.radio-bar:nth-child(1){height:4px;}
-.radio-bar:nth-child(2){height:7px;}
-.radio-bar:nth-child(3){height:10px;}
-.radio-bar:nth-child(4){height:13px;}
-.radio-bar:nth-child(5){height:10px;}
-.radio-transmission{
-  font-family:var(--mono);font-size:11px;color:#CEC9C0;
-  line-height:1.7;
-  background:#0a0a0a;
-  border-left:2px solid var(--amber);
-  padding:8px 10px;
-  margin-bottom:10px;
-  position:relative;
-}
-.radio-transmission::before{
-  content:'"';font-size:24px;color:#1e1e00;
-  position:absolute;top:-2px;left:6px;
-  font-family:Georgia,serif;line-height:1;
-}
-.radio-footer{
-  display:flex;gap:6px;
-}
-.radio-action-btn{
-  flex:1;background:#0a0a0a;border:1px solid #2a2a2a;
-  color:#666;font-family:var(--mono);font-size:9px;
-  padding:7px;cursor:pointer;-webkit-appearance:none;
-  transition:border-color .15s,color .15s;
-  letter-spacing:.5px;
-}
-.radio-action-btn:hover{border-color:#444;color:#CEC9C0;}
-.radio-action-btn.primary{border-color:#2a2800;color:var(--amber);}
-.radio-action-btn.primary:hover{background:#0e0d00;border-color:var(--amber);}
-
-/* ══════════════════════════════════════════════
-   CINEMATIC NARRATIVE POPUP
-   ══════════════════════════════════════════════ */
-.narrative-overlay{
-  position:fixed;inset:0;z-index:250;
-  display:none;align-items:flex-end;justify-content:center;
-  padding:0 0 80px;
-  pointer-events:none;
-}
-.narrative-overlay.show{display:flex;pointer-events:auto;}
-.narrative-box{
-  background:rgba(10,10,10,.96);
-  border:1px solid #222;
-  border-top:2px solid var(--blue);
-  width:100%;max-width:520px;
-  pointer-events:all;
-  box-shadow:0 -8px 40px rgba(0,0,0,.7), 0 0 24px rgba(92,208,255,.04);
-  animation:narrativeRise .3s cubic-bezier(.2,.8,.4,1);
-  position:relative;overflow:hidden;
-}
-.narrative-box::before{
-  content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,var(--blue),transparent);
-}
-@keyframes narrativeRise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
-.narrative-speaker{
-  padding:8px 14px 4px;
-  font-family:var(--mono);font-size:9px;letter-spacing:2px;
-  color:var(--blue);text-transform:uppercase;
-  display:flex;align-items:center;gap:6px;
-}
-.narrative-speaker-dot{width:5px;height:5px;border-radius:50%;background:var(--blue);animation:pulse .8s infinite;}
-.narrative-text{
-  padding:4px 14px 14px;
-  font-family:'Rajdhani',sans-serif;font-size:15px;
-  color:#CEC9C0;line-height:1.65;
-  min-height:60px;
-}
-.narrative-footer{
-  padding:8px 14px;
-  border-top:1px solid #141414;
-  display:flex;justify-content:space-between;align-items:center;
-}
-.narrative-source{font-family:var(--mono);font-size:9px;color:#333;font-style:italic;}
-.narrative-continue{
-  font-family:var(--mono);font-size:9px;color:#444;
-  background:none;border:1px solid #222;padding:5px 12px;
-  cursor:pointer;-webkit-appearance:none;
-  transition:color .1s,border-color .1s;letter-spacing:.5px;
-}
-.narrative-continue:hover{color:#CEC9C0;border-color:#444;}
-
-/* ══════════════════════════════════════════════
-   FLOATING FEEDBACK SYSTEM
-   ══════════════════════════════════════════════ */
-#float-container{
-  position:fixed;right:12px;top:56px;
-  z-index:210;
-  display:flex;flex-direction:column;align-items:flex-end;
-  gap:4px;pointer-events:none;
-  width:200px;
-}
-.float-msg{
-  font-family:var(--mono);font-size:11px;
-  padding:4px 10px;
-  border-left:2px solid var(--amber);
-  background:rgba(15,15,15,.92);
-  color:#CEC9C0;
-  white-space:nowrap;
-  animation:floatUp 2.6s ease-out forwards;
-  backdrop-filter:blur(4px);
-}
-.float-msg.dmg{border-left-color:var(--blood-bright);color:#FF6B6B;}
-.float-msg.success{border-left-color:var(--green);color:#7EE882;}
-.float-msg.info{border-left-color:var(--blue);color:#7FD8FF;}
-.float-msg.danger{border-left-color:var(--blood-bright);color:#FF8C00;}
-@keyframes floatUp{
-  0%  {opacity:0;transform:translateX(20px) translateY(0);}
-  15% {opacity:1;transform:translateX(0) translateY(0);}
-  70% {opacity:1;transform:translateX(0) translateY(-6px);}
-  100%{opacity:0;transform:translateX(0) translateY(-16px);}
-}
-
-/* ══════════════════════════════════════════════
-   ANIMATED STAT BARS — modern style
-   ══════════════════════════════════════════════ */
-.mini-fill{transition:width .6s cubic-bezier(.4,0,.2,1);}
-.mini-fill.ok  {background:linear-gradient(90deg,#3a8a3e,var(--green));}
-.mini-fill.warn{background:linear-gradient(90deg,#b8860b,var(--amber));}
-.mini-fill.crit{background:linear-gradient(90deg,#7A1515,var(--blood-bright));animation:pulse .7s infinite;}
-/* AP fill also animated */
-.ap-fill{transition:width .5s cubic-bezier(.4,0,.2,1);}
-/* Hunger/thirst bars */
-.need-fill{transition:width .5s cubic-bezier(.4,0,.2,1);}
-
-/* ── SKILL TAB ── */
-#tab-skill{background:#050505;}
-.skill-screen{flex:1;display:flex;flex-direction:column;overflow:hidden;}
-.skill-topbar{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:6px 12px;border-bottom:1px solid #141414;
-  background:#080808;flex-shrink:0;
-}
-.skill-topbar-title{font-family:var(--mono);font-size:9px;letter-spacing:2px;color:#333;}
-.skill-sp-badge{
-  font-family:'Bebas Neue',sans-serif;font-size:14px;
-  color:var(--amber);letter-spacing:1px;
-}
-.skill-sp-badge span{font-family:var(--mono);font-size:9px;color:#666;}
-.skill-columns{
-  flex:1;overflow-y:auto;
-  display:grid;grid-template-columns:repeat(3,1fr);
-  gap:8px;
-  padding:8px;
-}
-.skill-columns::-webkit-scrollbar{width:2px;}
-.skill-col{display:flex;flex-direction:column;gap:6px;}
-.skill-col-label{
-  font-family:var(--mono);font-size:7px;letter-spacing:2px;color:#2a2a2a;
-  text-transform:uppercase;text-align:center;padding:4px 0;
-  border-bottom:1px solid #141414;
-}
-.sk-node{
-  background:#0c0c0c;border:1px solid #1e1e1e;
-  padding:8px 9px;cursor:pointer;position:relative;
-  transition:border-color .15s,background .15s;
-}
-.sk-node.sk-unlocked{border-color:#2a2800;background:#0d0c00;}
-.sk-node.sk-available{
-  border-color:rgba(240,192,0,.4);background:#0d0c00;
-  animation:skGlow 2s ease-in-out infinite;
-}
-@keyframes skGlow{
-  0%,100%{box-shadow:0 0 6px rgba(240,192,0,.05)}
-  50%     {box-shadow:0 0 14px rgba(240,192,0,.15)}
-}
-.sk-node.sk-locked{opacity:.4;cursor:not-allowed;}
-.sk-node-head{display:flex;align-items:center;gap:6px;margin-bottom:3px;}
-.sk-icon{font-size:16px;flex-shrink:0;}
-.sk-name{font-family:'Rajdhani',sans-serif;font-weight:700;font-size:13px;color:#BDB8AE;flex:1;min-width:0;}
-.sk-node.sk-unlocked .sk-name,.sk-node.sk-available .sk-name{color:var(--amber);}
-.sk-level{font-family:'Bebas Neue',sans-serif;font-size:13px;color:#555;flex-shrink:0;}
-.sk-node.sk-unlocked .sk-level{color:var(--amber);}
-.sk-desc{font-family:var(--mono);font-size:8px;color:#444;line-height:1.4;}
-.sk-node.sk-unlocked .sk-desc{color:#666;}
-.sk-dots{display:flex;gap:2px;margin-top:4px;}
-.sk-dot{width:8px;height:3px;background:#1a1a1a;border-radius:1px;}
-.sk-dot.filled{background:var(--amber);}
-.sk-node.sk-available::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--amber);opacity:.6;}
-.sk-node.sk-unlocked::before{content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--amber);}
-/* Tooltip */
-.sk-tooltip{
-  position:fixed;z-index:300;
-  background:#111;border:1px solid #333;border-top:2px solid var(--amber);
-  padding:10px 12px;width:220px;
-  box-shadow:0 8px 30px rgba(0,0,0,.8);
-  font-family:var(--mono);
-}
-.sk-tt-name{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--amber);margin-bottom:4px;}
-.sk-tt-desc{font-size:10px;color:#888;line-height:1.5;margin-bottom:6px;}
-.sk-tt-effects{font-size:9px;color:#5CD0FF;line-height:1.6;border-top:1px solid #222;padding-top:5px;margin-bottom:5px;}
-.sk-tt-req{font-size:9px;color:#666;border-top:1px solid #1a1a1a;padding-top:5px;margin-bottom:6px;}
-.sk-tt-btn{
-  display:block;width:100%;
-  font-family:'Bebas Neue',sans-serif;font-size:15px;letter-spacing:2px;
-  padding:6px;border:1px solid var(--amber);background:#0d0d0d;
-  color:var(--amber);cursor:pointer;-webkit-appearance:none;
-  transition:background .1s;
-}
-.sk-tt-btn:hover{background:#161000;}
-.sk-tt-btn.disabled{border-color:#333;color:#444;cursor:not-allowed;}
-.sk-tt-btn.disabled:hover{background:#0d0d0d;}
-
-</style>
-</head>
-<body>
-
-<!-- ── CREATE SCREEN ── -->
-<div id="s-create" class="screen active">
-  <div class="create-inner">
-    <div class="create-title">DEAD<br>WORLD</div>
-    <div class="create-sub">// SINH TỒN ZOMBIE — TỪ CHỐI THỬ THÁCH //</div>
-
-    <div class="create-section">
-      <div class="create-label"><div class="create-label-line"></div>TÊN NHÂN VẬT<div class="create-label-line"></div></div>
-      <input id="char-name" class="create-input" type="text" placeholder="Nhập tên của bạn..." maxlength="24">
-    </div>
-
-    <div class="create-section">
-      <div class="create-label"><div class="create-label-line"></div>NGHỀ NGHIỆP<div class="create-label-line"></div></div>
-      <div class="job-grid" id="job-grid"></div>
-    </div>
-
-    <div class="create-section">
-      <div class="create-label"><div class="create-label-line"></div>THUỘC TÍNH<div class="create-label-line"></div></div>
-      <div class="attr-grid" id="attr-rows"></div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
-        <span style="font-family:var(--mono);font-size:10px;color:#444">Điểm còn lại</span>
-        <span style="font-family:'Bebas Neue',sans-serif;font-size:20px;color:var(--amber)" id="attr-pts-left">8</span>
-      </div>
-    </div>
-
-    <div style="display:flex;gap:8px;margin-top:10px;align-items:stretch;">
-      <button class="start-btn" style="flex:1" id="start-btn" onclick="UI_startGame()">▶ BẮT ĐẦU SINH TỒN</button>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;">
-        <button class="start-btn" style="width:52px;font-size:18px;letter-spacing:0;padding:8px 0;" onclick="tutOpen(null)">?</button>
-        <span style="font-family:var(--mono);font-size:8px;color:#444;white-space:nowrap;letter-spacing:.5px">HƯỚNG DẪN</span>
-      </div>
-    </div>
-    <div id="load-btn-wrap" style="margin-top:8px;display:none;">
-      <button class="start-btn" style="border-color:#4FC3F7;color:#4FC3F7;" onclick="UI_loadGame()">↩ TIẾP TỤC GAME CŨ</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── GO HOME CONFIRM POPUP ── -->
-<div class="go-home-overlay" id="go-home-overlay">
-  <div class="go-home-box">
-    <div class="go-home-icon">🏕</div>
-    <div class="go-home-title" id="go-home-title">VỀ NHÀ</div>
-    <div class="go-home-info" id="go-home-info">Khoảng cách: ? tiles</div>
-    <div class="go-home-cost" id="go-home-cost">Tốn <span id="go-home-ap">?</span> ĐHĐ</div>
-    <div class="go-home-btns">
-      <button class="go-home-btn confirm" onclick="UI_goHomeConfirm()">✓ VỀ</button>
-      <button class="go-home-btn cancel"  onclick="UI_goHomeCancel()">✕ HỦY</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── LOCATION ENTRY POPUP ── -->
-<div class="entry-popup-overlay" id="entry-popup-overlay">
-  <div class="entry-popup-box" id="entry-popup-box">
-    <div class="entry-popup-header">
-      <div class="entry-popup-icon" id="entry-icon">🏠</div>
-      <div>
-        <div class="entry-popup-name" id="entry-name">Nhà dân</div>
-        <div class="entry-popup-type" id="entry-type">BUILDING</div>
-      </div>
-    </div>
-    <div class="entry-popup-body">
-      <div class="entry-popup-desc" id="entry-desc">Bạn đang đứng trước cửa...</div>
-      <div class="entry-popup-stats" id="entry-stats"></div>
-      <div class="entry-popup-btns">
-        <button class="entry-btn enter" onclick="UI_entryEnter()">▶ VÀO</button>
-        <button class="entry-btn skip"  onclick="UI_entrySkip()">↩ BỎ QUA</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ── FLOATING FEEDBACK CONTAINER ── -->
-<div id="float-container"></div>
-
-<!-- ── RADIO POPUP ── -->
-<div class="radio-popup-overlay" id="radio-popup-overlay" onclick="UI_closeRadio(event)">
-  <div class="radio-popup-box" id="radio-popup-box">
-    <div class="radio-popup-header">
-      <span class="radio-popup-icon">📻</span>
-      <span class="radio-popup-title">TÍN HIỆU RADIO</span>
-      <button class="radio-popup-close" onclick="UI_closeRadio()">✕</button>
-    </div>
-    <div class="radio-popup-body" id="radio-popup-body">
-      <!-- Rendered by JS -->
-    </div>
-  </div>
-</div>
-
-<!-- ── CINEMATIC NARRATIVE POPUP ── -->
-<div class="narrative-overlay" id="narrative-overlay" onclick="UI_closeNarrative(event)">
-  <div class="narrative-box" id="narrative-box">
-    <div class="narrative-speaker" id="narrative-speaker">
-      <div class="narrative-speaker-dot"></div>
-      <span id="narrative-speaker-name">Người lạ</span>
-    </div>
-    <div class="narrative-text" id="narrative-text"></div>
-    <div class="narrative-footer">
-      <span class="narrative-source" id="narrative-source">— Không rõ nguồn gốc</span>
-      <button class="narrative-continue" onclick="UI_closeNarrative()">[ Tiếp tục ]</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── JOB DETAIL POPUP ── -->
-<div class="job-popup-overlay" id="job-popup-overlay" onclick="UI_closeJobPopup(event)">
-  <div class="job-popup-box" id="job-popup-box">
-    <!-- Rendered by JS -->
-  </div>
-</div>
-
-<!-- ── GAME SCREEN ── -->
-<div id="s-game" class="screen">
-
-  <!-- Header — slim: time + HP + AP + location + radio -->
-  <div class="game-header">
-    <!-- Time/Day block -->
-    <div class="hstat-time">
-      <div class="time-day" id="hv-day">NGÀY 1</div>
-      <div class="time-clock" id="hv-clock">08:00</div>
-      <div class="time-light" id="hv-light">☀ Ban ngày</div>
-    </div>
-    <!-- HP compact -->
-    <div class="hstat" id="h-hp" style="min-width:50px;padding:4px 8px;">
-      <div class="hstat-val" id="hv-hp" style="font-size:22px">10</div>
-      <div class="hstat-lbl">HP</div>
-    </div>
-    <!-- AP bar -->
-    <div class="hstat-ap" style="min-width:95px;">
-      <div class="ap-label"><span>ĐHĐ</span><span id="hv-ap">21/21</span></div>
-      <div class="ap-track"><div class="ap-fill" id="hb-ap" style="width:100%"></div></div>
-      <div class="ap-regen-timer" id="ap-regen-timer"></div>
-    </div>
-    <!-- STAMINA bar (⚔ SB — sức bền chiến đấu) -->
-    <div class="hstat-ap" style="min-width:80px;">
-      <div class="ap-label"><span style="color:#e05050;">⚔ SB</span><span id="hv-stm" style="color:#e05050;">10/10</span></div>
-      <div class="ap-track"><div class="ap-fill" id="hb-stm" style="width:100%;background:linear-gradient(90deg,#5a0a0a 0%,#c03030 55%,#e07070 100%);"></div></div>
-      <div class="ap-regen-timer" id="stm-regen-timer"></div>
-    </div>
-    <!-- XP / Level bar -->
-    <div class="xp-bar-wrap">
-      <div class="xp-bar-label">
-        <span>⭐ <span class="xp-lv" id="hv-xp-lv">Lv1</span></span>
-        <span class="xp-pts" id="hv-xp-pts">0 / 218 XP</span>
-      </div>
-      <div class="xp-track"><div class="xp-fill" id="hb-xp" style="width:0%"></div></div>
-    </div>
-    <!-- Location -->
-    <div class="hstat-loc">
-      <div class="loc-name" id="hv-loc">—</div>
-      <div class="loc-type" id="hv-loctype">Đang tải...</div>
-    </div>
-    <!-- Radio -->
-    <button class="radio-btn" id="radio-btn" onclick="UI_openRadio()">
-      <div class="radio-pulse" id="radio-pulse"></div>
-      <span class="radio-icon">📻</span>
-      <span class="radio-label" id="radio-label">RADIO</span>
-    </button>
-  </div>
-  <!-- Status Effects Strip -->
-  <div class="status-strip" id="status-strip"></div>
-  <!-- HIDDEN elements kept for renderHeader JS compatibility -->
-  <div style="display:none">
-    <div id="h-hunger"><div id="hv-hunger"></div><div id="hb-hunger"></div></div>
-    <div id="h-thirst"><div id="hv-thirst"></div><div id="hb-thirst"></div></div>
-  </div>
-
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="main"    onclick="UI_tab('main')">🏠 NƠI</button>
-    <button class="tab-btn"        data-tab="map"     onclick="UI_tab('map')">🗺 BẢN ĐỒ</button>
-    <button class="tab-btn"        data-tab="base"    onclick="UI_tab('base')" id="tab-btn-base" style="display:none">🏕 BASE</button>
-    <button class="tab-btn"        data-tab="equip"   onclick="UI_tab('equip')">🎒 TRANG BỊ</button>
-    <button class="tab-btn"        data-tab="skill"   onclick="UI_tab('skill')">🌟 KỸ NĂNG</button>
-    <button class="tab-btn"        data-tab="craft"   onclick="UI_tab('craft')">⚙ CHẾ TẠO</button>
-    <button class="tab-btn"        data-tab="log"     onclick="UI_tab('log')">📋 NHẬT KÝ</button>
-  </div>
-
-  <!-- Game body -->
-  <div class="game-body">
-
-    <!-- MAIN TAB — NEW LAYOUT -->
-    <div id="tab-main" class="tab-panel active">
-      <div class="main-layout">
-
-        <!-- ══ TOP ROW: Zone Map (left) + Status (right) ══ -->
-        <div class="main-top-row">
-
-          <!-- ── LEFT: Zone Grid + Tile Objects ── -->
-          <div class="gw-section" id="gw-section">
-            <div class="gw-label">// ZONE MAP</div>
-            <div class="gw-grid" id="gw-grid"><!-- JS renders --></div>
-            <!-- Tile strip: current location info -->
-            <div class="zone-tile-strip" id="zone-tile-strip">
-              <div class="zts-icon" id="zts-icon">🏚</div>
-              <div class="zts-body">
-                <div class="zts-name" id="zts-name">—</div>
-                <div class="zts-meta">
-                  <span id="zts-type-wrap" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:#2a2a2a">—</span></span>
-                  <span class="zts-threat none" id="zts-threat">✓ AN TOÀN</span>
-                </div>
-              </div>
-            </div>
-            <!-- Tile panel: objects, enemies, containers in current tile -->
-            <div id="tile-panel" class="tile-panel-inline"><!-- JS renders --></div>
-          </div>
-
-          <!-- ── RIGHT: Status Panel ── -->
-          <div class="status-right-col" id="status-right-col">
-
-            <div class="sr-hdr">SINH TỒN</div>
-            <div class="sr-vitals" id="sr-vitals"><!-- JS renders --></div>
-
-            <div class="sr-ap" id="sr-ap-block">
-              <div class="sr-ap-lbl">ĐHĐ <em id="sr-ap-num">0/0</em></div>
-              <div class="shud-ap-dots" id="sr-ap-dots"><!-- JS renders --></div>
-            </div>
-
-            <div class="sr-hdr">MỐI NGUY</div>
-            <div class="sr-threats" id="sr-threats">
-              <div class="srt-row clear"><span>Khu vực</span><span>—</span></div>
-            </div>
-
-            <div class="sr-hdr">BẢN ĐỒ</div>
-            <div class="sr-minimap">
-              <div class="mmp-grid" id="mmp-grid"><!-- JS renders --></div>
-            </div>
-
-            <div class="sr-hdr">THỐNG KÊ</div>
-            <div class="sr-baseinfo" id="sr-baseinfo">
-              <div class="sri-row"><span>Ngày</span><span id="sri-day">1</span></div>
-              <div class="sri-row"><span>Kills</span><span id="sri-kills">0</span></div>
-              <div class="sri-row"><span>Tiles</span><span id="sri-tiles">0</span></div>
-            </div>
-
-          </div><!-- /status-right-col -->
-
-        </div><!-- /main-top-row -->
-
-        <!-- old HUD kept invisible for JS compat -->
-        <div id="survival-hud" style="display:none"></div>
-
-        <!-- ── BOTTOM: Action Bar ── -->
-        <div class="ctx-actions-bar" id="ctx-actions-bar"><!-- JS renders --></div>
-
-      </div>
-    </div>
-
-    <!-- Hidden compat stubs — JS writes to these, they're unused visually -->
-    <div id="dir-grid"    style="display:none"></div>
-    <div id="scan-global" style="display:none"></div>
-    <div id="stats-mini"  style="display:none"></div>
-
-    <!-- MAP TAB — Full-Screen World Map -->
-    <div id="tab-map" class="tab-panel">
-      <div class="wm-screen">
-        <!-- Top bar -->
-        <div class="wm-topbar">
-          <span class="wm-title">// BẢN ĐỒ THẾ GIỚI</span>
-          <span class="wm-coords" id="wm-coords">X:0 Y:0</span>
-          <span class="wm-day" id="wm-day">NGÀY 1</span>
-        </div>
-        <!-- Map canvas -->
-        <div class="wm-viewport" id="wm-viewport">
-          <div class="wm-grid" id="wm-grid"><!-- JS renders --></div>
-        </div>
-        <!-- Legend -->
-        <div class="wm-legend">
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:rgba(122,21,21,.3);border-color:var(--blood)"></div>📍 Bạn</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:#2e261c;border-color:#3a2f20"></div>Đường lớn</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:#1e1a14;border-color:#2a2418"></div>Phố</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:#0d1a0a;border-color:#152212"></div>🌲 Rừng</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:rgba(0,35,70,.6);border-color:#0a2a50"></div>〜 Sông</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="border-color:#3a3000"></div>🏠 Địa danh</div>
-          <div class="wm-legend-item"><div class="wm-legend-dot" style="background:rgba(192,57,43,.2);border-color:var(--blood-bright)"></div>☠ Boss</div>
-          <div class="wm-legend-item" style="color:var(--blood-bright)">• Zombie</div>
-          <div class="wm-legend-item" style="color:#1a1a1a">█ Chưa khám phá</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- BASE TAB — AAA Top-down safehouse view -->
-    <div id="tab-base" class="tab-panel">
-      <div class="base-screen">
-        <div class="base-hud-bar" id="base-hud-bar"></div>
-        <div class="base-viewport" id="base-viewport">
-          <div class="base-map-wrap">
-            <div class="base-overlay-btns">
-              <button class="base-overlay-btn" id="base-ovr-room"    onclick="UI_baseToggleOverlay('room')">🏷 PHÒNG</button>
-              <button class="base-overlay-btn" id="base-ovr-defense" onclick="UI_baseToggleOverlay('defense')">🛡 PHÒNG THỦ</button>
-              <button class="base-overlay-btn active" id="base-ovr-off" onclick="UI_baseToggleOverlay('off')">✕ TẮT</button>
-            </div>
-            <div class="base-grid" id="base-grid"></div>
-          </div>
-        </div>
-        <div class="base-actions-bar" id="base-actions-bar"></div>
-      </div>
-    </div>
-
-    <!-- EQUIPMENT TAB — Minecraft paper doll style -->
-    <div id="tab-equip" class="tab-panel">
-      <div class="equip-screen">
-        <!-- LEFT: paper doll + slots -->
-        <div class="equip-doll-col" id="equip-doll-col">
-          <!-- Rendered by JS -->
-        </div>
-        <!-- RIGHT: inventory grid -->
-        <div class="equip-bag-col">
-          <div class="equip-bag-hdr">
-            <span class="equip-bag-title">🎒 TÚI ĐỒ</span>
-            <span class="equip-bag-weight" id="equip-bag-weight">0/15kg</span>
-          </div>
-          <div class="equip-grid" id="equip-grid">
-            <!-- Rendered by JS -->
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- SKILL TREE TAB -->
-    <div id="tab-skill" class="tab-panel">
-      <div class="skill-screen">
-        <div class="skill-topbar">
-          <span class="skill-topbar-title">🌟 // CÂY KỸ NĂNG</span>
-          <div class="skill-sp-badge"><span>ĐIỂM KN: </span><span id="skill-sp-count">0</span></div>
-        </div>
-        <div class="skill-columns" id="skill-columns"><!-- JS renders --></div>
-      </div>
-    </div>
-
-    <!-- CRAFTING TAB -->
-    <div id="tab-craft" class="tab-panel">
-      <div class="craft-header">
-        <span style="font-family:var(--mono);font-size:10px;color:var(--dim);letter-spacing:2px">⚙ CHẾ TẠO VŨ KHÍ & ĐỒ DÙNG</span>
-        <span id="craft-skill-label" style="font-family:var(--mono);font-size:10px;color:var(--amber)"></span>
-      </div>
-      <div class="craft-list" id="craft-list">
-        <!-- Rendered by JS -->
-      </div>
-    </div>
-
-    <!-- LOG TAB — 2 sub-tabs: Hằng ngày + Câu chuyện -->
-    <div id="tab-log" class="tab-panel">
-      <!-- Sub-tab bar -->
-      <div class="log-subtab-bar">
-        <button class="log-subtab-btn active" id="lsubtab-daily" onclick="UI_logSubTab('daily')">📋 NHẬT KÝ HẰNG NGÀY</button>
-        <button class="log-subtab-btn" id="lsubtab-story" onclick="UI_logSubTab('story')">📖 CÂU CHUYỆN</button>
-      </div>
-      <!-- Hằng ngày panel -->
-      <div class="log-subpanel active" id="log-panel-daily">
-        <div class="log-list" id="log-list"></div>
-      </div>
-      <!-- Câu chuyện panel -->
-      <div class="log-subpanel" id="log-panel-story">
-        <div class="log-list" id="story-list"></div>
-      </div>
-    </div>
-
-  </div><!-- /game-body -->
-
-</div><!-- /s-game -->
-
-<!-- ── COMBAT OVERLAY — Tactical AP Budget ── -->
-<div class="combat-overlay" id="combat-overlay" style="position:relative;">
-
-  <!-- ══ KILL / LOOT POPUP ══ -->
-  <div class="cbt-kill-popup" id="cbt-kill-popup">
-    <div class="cbt-kill-title" id="cbt-kill-title">☠ HẠ GỤC!</div>
-    <div class="cbt-kill-xp" id="cbt-kill-xp">+10 XP</div>
-    <div class="cbt-kill-loot" id="cbt-kill-loot"></div>
-    <button class="cbt-kill-close" onclick="CBT_closeLoot()">[ TIẾP TỤC ]</button>
-  </div>
-
-  <!-- ══ ENEMY INFO BAR ══ -->
-  <div class="cbt-enemy-bar">
-    <div class="cbt-enemy-icon" id="cbt-enemy-icon">🧟</div>
-    <div class="cbt-enemy-info">
-      <div class="cbt-enemy-name" id="cbt-enemy-name">Zombie</div>
-      <div class="cbt-enemy-type">
-        <span class="cbt-type-badge normal" id="cbt-type-badge">THƯỜNG</span>
-      </div>
-      <div class="cbt-enemy-meta" id="cbt-enemy-meta">Nguy hiểm</div>
-      <div class="cbt-type-warn" id="cbt-type-warn">⚠ Cảnh báo đặc biệt</div>
-    </div>
-    <div class="cbt-enemy-hp-wrap">
-      <div class="cbt-enemy-hp-lbl">
-        <span>HP KẺ THÙ</span>
-        <span class="cbt-enemy-hp-num" id="cbt-enemy-hp-num">?/?</span>
-      </div>
-      <div class="cbt-enemy-hp-track" id="cbt-enemy-hp-track">
-        <div class="cbt-enemy-hp-fill" id="cbt-enemy-hp-fill" style="width:100%"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══ ARENA ══ -->
-  <div class="cbt-arena">
-
-    <!-- STAMINA Budget (thay AP — combat dùng SB không tốn ĐHĐ) -->
-    <div class="cbt-ap-budget">
-      <span class="cbt-ap-budget-lbl" style="color:#e05050;">⚔ SỨC BỀN</span>
-      <div class="cbt-ap-dots" id="cbt-ap-dots"></div>
-      <span class="cbt-ap-budget-num" id="cbt-ap-budget-num" style="color:#e05050;">0</span>
-    </div>
-
-    <!-- XP Bar -->
-    <div class="cbt-xp-row" id="cbt-xp-row">
-      <span class="cbt-xp-lbl">XP</span>
-      <div class="cbt-xp-track"><div class="cbt-xp-fill" id="cbt-xp-fill" style="width:0%"></div></div>
-      <span class="cbt-xp-num" id="cbt-xp-num">0/100</span>
-    </div>
-
-    <!-- Enemy Intent -->
-    <div class="cbt-intent" id="cbt-intent">
-      <div class="cbt-intent-lbl">// KẺ THÙ ĐANG CHUẨN BỊ</div>
-      <div id="cbt-intent-text">Tấn công thường...</div>
-    </div>
-
-    <!-- Combat Log -->
-    <div class="cbt-log" id="cbt-log">
-      <div class="cbt-log-entry info">// Chiến đấu bắt đầu. Chọn hành động.</div>
-    </div>
-
-    <!-- Boss phase -->
-    <div class="cbt-boss-phase" id="cbt-boss-phase" style="display:none"></div>
-
-    <!-- Action Grid -->
-    <div class="cbt-actions">
-      <button class="cbt-action-btn danger" id="cbt-btn-quick" onclick="CBT_action('quick')">
-        <div class="cbt-action-icon">⚔️</div>
-        <div class="cbt-action-name">Đánh Nhanh</div>
-        <div class="cbt-action-desc">An toàn, cân bằng.</div>
-        <div class="cbt-action-cost" id="cbt-cost-quick">-2 ĐHĐ</div>
-      </button>
-      <button class="cbt-action-btn danger" id="cbt-btn-heavy" onclick="CBT_action('heavy')">
-        <div class="cbt-action-icon">💪</div>
-        <div class="cbt-action-name">Đòn Mạnh</div>
-        <div class="cbt-action-desc">×2 dmg. Miss = nhận ×1.5.</div>
-        <div class="cbt-action-cost" id="cbt-cost-heavy">-4 ĐHĐ</div>
-      </button>
-      <button class="cbt-action-btn" id="cbt-btn-defend" onclick="CBT_action('defend')">
-        <div class="cbt-action-icon">🛡️</div>
-        <div class="cbt-action-name">Phòng Thủ</div>
-        <div class="cbt-action-desc">-50% dmg nhận lượt này.</div>
-        <div class="cbt-action-cost" id="cbt-cost-defend">-1 ĐHĐ</div>
-      </button>
-      <button class="cbt-action-btn" id="cbt-btn-precise" onclick="CBT_action('precise')">
-        <div class="cbt-action-icon">🎯</div>
-        <div class="cbt-action-name">Nhắm Kỹ</div>
-        <div class="cbt-action-desc">+4 hit. Crit 25% nếu trúng.</div>
-        <div class="cbt-action-cost" id="cbt-cost-precise">-3 ĐHĐ</div>
-      </button>
-      <button class="cbt-action-btn" id="cbt-btn-stealth" onclick="CBT_action('stealth')" style="display:none">
-        <div class="cbt-action-icon">🗡️</div>
-        <div class="cbt-action-name">Ám Sát</div>
-        <div class="cbt-action-desc">Sneak≥2. ×2.5 dmg.</div>
-        <div class="cbt-action-cost" id="cbt-cost-stealth">-3 ĐHĐ</div>
-      </button>
-      <!-- Flee — hiện rõ chance bị cắn -->
-      <button class="cbt-flee-btn" id="cbt-btn-flee" onclick="CBT_flee()">
-        <span>🏃 Bỏ chạy</span>
-        <span style="display:flex;align-items:center;gap:8px">
-          <span class="cbt-flee-danger" id="cbt-flee-danger">⚠ Có thể bị cắn!</span>
-          <span id="cbt-flee-cost" style="font-family:var(--mono);font-size:9px;color:#555">-2 ĐHĐ</span>
-        </span>
-      </button>
-    </div>
-  </div>
-
-  <!-- ══ PLAYER HP BAR ══ -->
-  <div class="cbt-player-bar" id="cbt-player-bar">
-    <span class="cbt-player-lbl">HP BẠN</span>
-    <div class="cbt-player-hp-track">
-      <div class="cbt-player-hp-fill ok" id="cbt-player-hp-fill" style="width:100%"></div>
-    </div>
-    <span class="cbt-player-hp-num" id="cbt-player-hp-num">15</span>
-  </div>
-</div>
-
-<!-- ── ACTION POPUP ── -->
-<div class="popup-overlay" id="popup-overlay" onclick="UI_closePopup(event)">
-  <div class="popup-box" onclick="event.stopPropagation()">
-    <div class="popup-header">
-      <div class="popup-icon" id="popup-icon">📦</div>
-      <div>
-        <div class="popup-title" id="popup-title">Kệ hàng</div>
-        <div class="popup-meta" id="popup-meta">Có thể lục soát</div>
-      </div>
-      <button class="popup-close" onclick="UI_closePopup()">✕ ĐÓNG</button>
-    </div>
-    <div class="popup-actions" id="popup-actions"></div>
-    <div class="popup-result" id="popup-result"></div>
-  </div>
-</div>
-
-<!-- ── TUTORIAL OVERLAY ── -->
-<div class="tutorial-overlay" id="tutorial-overlay">
-  <div class="tutorial-box">
-    <div class="tut-header">
-      <div class="tut-title">HƯỚNG DẪN</div>
-      <div class="tut-sub">// ĐỌC KỸ TRƯỚC KHI BẮT ĐẦU //</div>
-      <div class="tut-progress" id="tut-progress"></div>
-    </div>
-    <div class="tut-pages" id="tut-pages"></div>
-    <div class="tut-footer">
-      <button class="tut-nav-btn" id="tut-prev">← Trước</button>
-      <button class="tut-skip" id="tut-skip">Bỏ qua</button>
-      <button class="tut-nav-btn primary" id="tut-next">Tiếp theo →</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── INTRO OVERLAY ── -->
-<div class="intro-overlay" id="intro-overlay" style="display:none;">
-  <div class="intro-title">DEAD WORLD</div>
-  <div class="intro-msg blinking" id="intro-msg">Đang khởi tạo thế giới...</div>
-</div>
-
-<script>
 // ══════════════════════════════════════════════════════
-// UI LAYER — interacts with engine, renders DOM
+// DEAD WORLD — deadworld-combat-arena.js
+// Canvas Pixel Art Combat Arena
+//
+// ĐÂY LÀ UI LAYER THUẦN TÚY.
+// Không chứa game logic. Không modify state.
+// Chỉ visualize kết quả từ engine-combat.js.
+//
+// Load SAU deadworld-shim.js (cuối danh sách script).
+// Gọi DWArena.show(state) để mở arena.
+// Gọi DWArena.hide() để đóng.
+//
+// Kiến trúc:
+//   engine-combat.js  ← xử lý tất cả logic
+//   deadworld-combat-arena.js ← render pixel art lên Canvas
+//
+// KHÔNG modify:
+//   - gs (global state)
+//   - DW_fight / DW_flee / bất kỳ engine function nào
+//
 // ══════════════════════════════════════════════════════
 
-const MODEL = 'claude-haiku-4-5-20251001';
-// API key được giữ bí mật trên Cloudflare Worker — không cần lưu phía client
-const PROXY_URL = 'https://wispy-credit-32d8.duythong1990.workers.dev';
-let currentPopupObj = null;
-let activeTab = 'main';
+var DWArena = (function () {
+  'use strict';
 
-// ── INIT ─────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  // Build job grid and attr rows
-  buildJobGrid();
-  buildAttrRows();
+  // ── CONSTANTS ──────────────────────────────────────
+  var TILE_W  = 32;
+  var TILE_H  = 28;
+  var COLS    = 12;
+  var ROWS    = 7;
+  var CANVAS_W = TILE_W * COLS;
+  var CANVAS_H = TILE_H * ROWS;
 
-  // Show load button if save exists
-  if (DW_hasSave()) {
-    document.getElementById('load-btn-wrap').style.display = 'block';
-  }
-});
+  // Pixel color palette — post-apocalyptic
+  var PAL = {
+    bg:          '#0a0808',
+    ground:      '#1a1510',
+    ground2:     '#1e1812',
+    wall:        '#2a2018',
+    wall2:       '#352818',
+    crack:       '#110d08',
+    fire:        ['#ff6600','#ff4400','#ff8800','#ffaa00'],
+    smoke:       'rgba(40,30,20,0.4)',
+    player:      '#e8d090',
+    playerShirt: '#4a6080',
+    playerShirt2:'#3a5070',
+    zombie:      '#607050',
+    zombie2:     '#4a5840',
+    zombieEye:   '#cc2200',
+    zombieDark:  '#384530',
+    blood:       '#7a1515',
+    blood2:      '#5a0d0d',
+    hit:         '#ff3300',
+    miss:        '#445566',
+    laser:       '#4488ff',
+    laser2:      '#88bbff',
+    beam_red:    '#ff2200',
+    beam_red2:   '#ff6644',
+    slash:       '#ffffaa',
+    slash2:      '#ffcc44',
+    bullet:      '#ffdd44',
+    ui_bg:       '#0c0a08',
+    ui_border:   '#2a2018',
+    ui_amber:    '#f0c000',
+    ui_red:      '#cc2200',
+    ui_green:    '#44aa44',
+    ui_blue:     '#4488cc',
+    ui_dim:      '#554433',
+    hp_full:     '#cc2200',
+    hp_low:      '#ff4400',
+    boss_glow:   'rgba(200,50,0,0.15)',
+  };
 
-// ── CREATE SCREEN ─────────────────────────────────────
-let selectedJob = 'nurse';
-let jobDiffFilter = 0; // giữ để không crash nếu còn gọi filterJobs
+  // ── STATE ──────────────────────────────────────────
+  var _canvas   = null;
+  var _ctx      = null;
+  var _overlay  = null;
+  var _raf      = null;
+  var _tick     = 0;
+  var _visible  = false;
 
-const ATTR_NAMES = {str:'SỨC MẠNH',agi:'NHANH NHẸN',sur:'SINH TỒN',per:'Ý CHÍ'};
-const ATTR_EFFECTS = {
-  str:'HP max & Mang nặng tối đa',
-  agi:'ĐHĐ tối đa tăng',
-  sur:'Đói/khát giảm chậm hơn',
-  per:'Panic & Stress tăng chậm',
-};
-const ATTR_MAX_OLD = 5; // không dùng nữa
+  // Arena internal state (KHÔNG phải gs._state)
+  var _arena = {
+    enemies:    [],   // { id, type, hp, maxHp, x, y, px, py, dead, flash, flashTimer }
+    player:     { px: 0, py: 0, flashTimer: 0, flashColor: '' },
+    effects:    [],   // { type, x, y, life, maxLife, ... }
+    log:        [],   // { text, color, alpha }
+    lastMsg:    '',
+    phase:      'idle', // 'idle' | 'player_attack' | 'enemy_attack' | 'result'
+    boss:       null,   // boss data nếu có
+    pendingCombat: null,
+  };
 
-function filterJobs(diff) {
-  // Không dùng nữa — giữ stub để không crash nếu còn gọi
-  buildJobGrid();
-}
+  // ── DOM SETUP ──────────────────────────────────────
+  function _createDOM() {
+    if (document.getElementById('dwa-overlay')) return;
 
-function buildJobGrid() {
-  const grid = document.getElementById('job-grid');
-  grid.innerHTML = DW_JOBS.map(j => {
-    const isSel = j.id === selectedJob;
-    return `<button class="job-card${isSel?' selected':''}" id="jc-${j.id}"
-      onclick="selectJob('${j.id}')">
-      <div class="job-card-top">
-        <div class="job-icon">${j.icon}</div>
-        <div class="job-main">
-          <div class="job-name">${j.name}</div>
-          <div class="job-tagline">${j.tagline}</div>
-        </div>
-      </div>
-    </button>`;
-  }).join('');
-}
+    // Inject styles
+    var style = document.createElement('style');
+    style.id = 'dwa-styles';
+    style.textContent = [
+      '#dwa-overlay{',
+        'position:fixed;inset:0;z-index:9000;',
+        'background:#000;display:none;flex-direction:column;',
+        'font-family:"Rajdhani",sans-serif;',
+        // KHÔNG dùng user-select:none trên container — iOS Safari sẽ block tap events trên button con
+      '}',
+      '#dwa-overlay.active{display:flex;}',
 
-// Mở popup khi chọn job — hiện giữa màn hình
-function _renderJobDetail(jobId) {
-  const overlay = document.getElementById('job-popup-overlay');
-  const box     = document.getElementById('job-popup-box');
-  if (!overlay || !box) return;
-  const j = DW_JOBS.find(x => x.id === jobId);
-  if (!j) { overlay.className = 'job-popup-overlay'; return; }
+      // Top HUD — resource bar kiểu hình tham khảo
+      '#dwa-hud{',
+        'flex-shrink:0;height:52px;background:#0c0a08;',
+        'border-bottom:2px solid #2a1a08;',
+        'display:flex;align-items:center;gap:0;overflow:hidden;',
+      '}',
+      '.dwa-hud-block{',
+        'display:flex;flex-direction:column;align-items:center;',
+        'justify-content:center;padding:4px 14px;',
+        'border-right:1px solid #2a1a08;min-width:64px;',
+      '}',
+      '.dwa-hud-icon{font-size:22px;line-height:1;}',
+      '.dwa-hud-val{',
+        'font-family:"Bebas Neue",sans-serif;font-size:18px;',
+        'color:#f0c000;line-height:1;letter-spacing:1px;',
+      '}',
+      '.dwa-hud-lbl{',
+        'font-family:"Share Tech Mono",monospace;font-size:8px;',
+        'color:#554433;letter-spacing:2px;text-transform:uppercase;',
+      '}',
+      '#dwa-hud-title{',
+        'flex:1;text-align:center;',
+        'font-family:"Bebas Neue",sans-serif;font-size:22px;',
+        'letter-spacing:4px;color:#cc2200;',
+      '}',
+      '#dwa-close-btn{',
+        'margin-right:12px;padding:6px 14px;',
+        'background:#1a0a0a;border:1px solid #7a1515;',
+        'color:#cc4444;font-family:"Share Tech Mono",monospace;',
+        'font-size:11px;letter-spacing:2px;cursor:pointer;',
+        'transition:background .15s,color .15s;',
+      '}',
+      '#dwa-close-btn:hover{background:#7a1515;color:#fff;}',
 
-  const startItems = (j.startItems||[]).map(id => {
-    const def = (typeof ITEM_DB !== 'undefined' && ITEM_DB[id]) || {name:id, icon:'📦'};
-    return `<span class="job-stat-chip">${def.icon} ${def.name||id}</span>`;
-  }).join('');
+      // Canvas area
+      '#dwa-canvas-wrap{',
+        'flex:1;display:flex;align-items:center;justify-content:center;',
+        'background:#080604;position:relative;overflow:hidden;',
+        'min-height:0;',
+      '}',
+      '#dwa-canvas{',
+        'image-rendering:pixelated;image-rendering:crisp-edges;',
+        'max-width:100%;max-height:100%;',
+      '}',
 
-  box.innerHTML = `
-    <div class="job-popup-header">
-      <div class="job-popup-icon">${j.icon}</div>
-      <div class="job-popup-title">
-        <div class="job-popup-name">${j.name}</div>
-        <div class="job-popup-tagline">${j.tagline}</div>
-      </div>
-      <button class="job-popup-close" onclick="UI_closeJobPopup()">✕ ĐÓNG</button>
-    </div>
-    <div class="job-popup-body">
-      <div class="job-popup-perk">${j.perk}</div>
-      <div class="job-proscons">
-        <div class="job-pros">
-          <div class="job-proscons-label">Điểm mạnh</div>
-          <ul>${(j.pros||[]).map(p=>`<li>${p}</li>`).join('')}</ul>
-        </div>
-        <div class="job-cons">
-          <div class="job-proscons-label">Điểm yếu</div>
-          <ul>${(j.cons||[]).map(c=>`<li>${c}</li>`).join('')}</ul>
-        </div>
-      </div>
-      ${startItems ? `
-        <div class="job-popup-section-label">Đồ vật ban đầu</div>
-        <div class="job-stats">${startItems}</div>
-      ` : ''}
-      <button class="job-popup-select-btn${j.id===selectedJob?' chosen':''}"
-        onclick="UI_confirmJobSelect('${j.id}')">
-        ${j.id===selectedJob ? '✓ ĐÃ CHỌN' : '▶ CHỌN NGHỀ NÀY'}
-      </button>
-    </div>`;
+      // Scanline CRT effect
+      '#dwa-canvas-wrap::after{',
+        'content:"";position:absolute;inset:0;pointer-events:none;',
+        'background:repeating-linear-gradient(',
+          '0deg,transparent,transparent 2px,',
+          'rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 3px',
+        ');',
+      '}',
 
-  overlay.className = 'job-popup-overlay show';
-}
+      // Bottom action panel
+      '#dwa-actions{',
+        'flex-shrink:0;background:#0c0a08;',
+        'border-top:2px solid #2a1a08;',
+        'display:flex;flex-direction:column;gap:0;',
+      '}',
+      '#dwa-log{',
+        'padding:6px 14px;min-height:36px;max-height:52px;',
+        'overflow:hidden;',
+        'font-family:"Share Tech Mono",monospace;font-size:11px;',
+        'color:#a09080;line-height:1.4;',
+        'border-bottom:1px solid #1a1208;',
+      '}',
+      '#dwa-btn-row{',
+        'display:flex;gap:0;padding:8px 10px;',
+      '}',
+      '.dwa-btn{',
+        'flex:1;padding:10px 6px;margin:0 4px;',
+        'background:#110e08;border:1px solid #2a1a08;',
+        'color:#a09060;font-family:"Rajdhani",sans-serif;',
+        'font-size:14px;font-weight:700;letter-spacing:1px;',
+        'cursor:pointer;text-align:center;position:relative;',
+        'transition:all .15s;',
+        // Mobile: touch-action:manipulation supprime 300ms delay + évite pan accidentel
+        'touch-action:manipulation;',
+        '-webkit-tap-highlight-color:rgba(240,192,0,.2);',
+        'user-select:none;-webkit-user-select:none;',
+      '}',
+      '.dwa-btn:hover:not(:disabled){',
+        'background:#1e160a;border-color:#f0c000;color:#f0c000;',
+      '}',
+      '.dwa-btn:disabled{opacity:0.4;cursor:not-allowed;}',
+      '.dwa-btn .dwa-ap{',
+        'display:block;font-size:9px;color:#554433;',
+        'font-family:"Share Tech Mono",monospace;margin-top:2px;',
+      '}',
+      '.dwa-btn-attack{border-color:#7a1515;}',
+      '.dwa-btn-attack:hover:not(:disabled){',
+        'background:#2a0808;border-color:#cc2200;color:#ff4444;',
+      '}',
+      '.dwa-btn-flee{border-color:#1a3050;}',
+      '.dwa-btn-rest{border-color:#1a3a1a;color:#7aaa7a;}',
+      '.dwa-btn-rest:hover:not(:disabled){background:#0a1a0a;border-color:#44cc44;color:#88ff88;}',
+      '.dwa-btn-rest.threat-warning{border-color:#aa6600;color:#ffaa44;animation:pulse-warning 1s infinite;}',
+      '@keyframes pulse-warning{0%,100%{opacity:1}50%{opacity:0.6}}',
+      '.dwa-btn-role{border-color:#3a1a5a;color:#cc88ff;}',
+      '.dwa-btn-role:hover:not(:disabled){background:#1a0a2a;border-color:#9944dd;color:#ee99ff;}',
+      '.dwa-btn-role:disabled{opacity:0.3;cursor:not-allowed;}',
 
-function selectJob(id) {
-  selectedJob = id;
-  buildJobGrid();          // highlight card
-  _renderJobDetail(id);    // mở popup
-}
+      // Enemy cards
+      '#dwa-enemy-list{',
+        'display:flex;gap:8px;padding:6px 10px;',
+        'overflow-x:auto;border-bottom:1px solid #1a1208;',
+        'flex-shrink:0;',
+      '}',
+      '.dwa-enemy-card{',
+        'min-width:80px;padding:6px 8px;',
+        'background:#0f0c08;border:1px solid #2a1a08;',
+        'cursor:pointer;transition:all .15s;flex-shrink:0;',
+        'touch-action:manipulation;',
+        '-webkit-tap-highlight-color:rgba(200,100,50,.2);',
+        'user-select:none;-webkit-user-select:none;',
+      '}',
+      '.dwa-enemy-card.selected{border-color:#f0c000;background:#1a1400;}',
+      '.dwa-enemy-card.dead{opacity:0.3;cursor:not-allowed;border-color:#111;}',
+      '.dwa-enemy-card .ec-icon{font-size:18px;line-height:1;}',
+      '.dwa-enemy-card .ec-name{',
+        'font-size:10px;color:#887766;margin-top:2px;',
+        'font-family:"Share Tech Mono",monospace;',
+      '}',
+      '.dwa-enemy-card .ec-hp{',
+        'font-size:9px;color:#cc2200;margin-top:1px;',
+        'font-family:"Share Tech Mono",monospace;',
+      '}',
+      '.ec-hpbar{height:3px;background:#1a0a0a;margin-top:3px;border-radius:1px;}',
+      '.ec-hpfill{height:100%;background:#cc2200;border-radius:1px;transition:width .3s;}',
+    ].join('');
+    document.head.appendChild(style);
 
-// Đóng popup khi click ra ngoài box hoặc bấm nút ĐÓNG
-function UI_closeJobPopup(evt) {
-  if (evt && evt.target !== document.getElementById('job-popup-overlay')) return;
-  document.getElementById('job-popup-overlay').className = 'job-popup-overlay';
-}
+    // Overlay container
+    _overlay = document.createElement('div');
+    _overlay.id = 'dwa-overlay';
+    _overlay.innerHTML = [
+      '<div id="dwa-hud">',
+        '<div class="dwa-hud-block">',
+          '<div class="dwa-hud-icon">❤️</div>',
+          '<div class="dwa-hud-val" id="dwa-hp">--</div>',
+          '<div class="dwa-hud-lbl">HP</div>',
+        '</div>',
+        '<div class="dwa-hud-block">',
+          '<div class="dwa-hud-icon">⚡</div>',
+          '<div class="dwa-hud-val" id="dwa-ap">--</div>',
+          '<div class="dwa-hud-lbl">AP</div>',
+        '</div>',
+        '<div class="dwa-hud-block">',
+          '<div class="dwa-hud-icon">🔫</div>',
+          '<div class="dwa-hud-val" id="dwa-ammo">--</div>',
+          '<div class="dwa-hud-lbl">ĐẠN</div>',
+        '</div>',
+        '<div id="dwa-hud-title">⚔ CHIẾN ĐẤU</div>',
+        '<button id="dwa-close-btn">✕ THOÁT</button>',
+      '</div>',
 
-// Chọn nghề từ trong popup → đóng popup
-function UI_confirmJobSelect(id) {
-  selectedJob = id;
-  buildJobGrid();
-  document.getElementById('job-popup-overlay').className = 'job-popup-overlay';
-}
+      '<div id="dwa-canvas-wrap">',
+        '<canvas id="dwa-canvas"></canvas>',
+      '</div>',
 
-// ── ATTR: bắt đầu từ 0, nút +/- , 2 cột ─────────────
-let attrs = {str:0,agi:0,sur:0,per:0};  // reset về 0
-const ATTR_MAX = 5, ATTR_TOTAL = 8;
+      '<div id="dwa-actions">',
+        '<div id="dwa-enemy-list"></div>',
+        '<div id="dwa-log">Chọn kẻ thù để tấn công.</div>',
+        '<div id="dwa-btn-row">',
+          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-fight" disabled>',
+            '⚔ TẤN CÔNG',
+            '<span class="dwa-ap" id="dwa-btn-fight-ap">-3 SB</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-heavy" disabled>',
+            '💥 ĐÒN MẠNH',
+            '<span class="dwa-ap">-4 SB +1 ĐHĐ</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-attack" id="dwa-btn-stealth" disabled>',
+            '🗡 ÁM SÁT',
+            '<span class="dwa-ap">-3 SB</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-role" id="dwa-btn-role" disabled style="display:none">',
+            '<span id="dwa-btn-role-label">🌟 KỸ NĂNG</span>',
+            '<span class="dwa-ap" id="dwa-btn-role-ap">Skill đặc biệt</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-rest" id="dwa-btn-rest">',
+            '😮‍💨 NGHỈ',
+            '<span class="dwa-ap" id="dwa-btn-rest-lbl">Zombie phản công</span>',
+          '</button>',
+          '<button class="dwa-btn dwa-btn-flee" id="dwa-btn-flee">',
+            '🏃 BỎ CHẠY',
+            '<span class="dwa-ap">-2 ĐHĐ</span>',
+          '</button>',
+        '</div>',
+      '</div>',
+    ].join('');
+    document.body.appendChild(_overlay);
 
-function buildAttrRows() {
-  const wrap = document.getElementById('attr-rows');
-  if (!wrap) return;
-  const left = ATTR_TOTAL - usedPoints();
-  const el   = document.getElementById('attr-pts-left');
-  if (el) el.textContent = left;
+    // Canvas
+    _canvas = document.getElementById('dwa-canvas');
+    _canvas.width  = CANVAS_W;
+    _canvas.height = CANVAS_H;
+    _ctx = _canvas.getContext('2d');
+    _ctx.imageSmoothingEnabled = false;
 
-  wrap.innerHTML = Object.entries(ATTR_NAMES).map(([k, label]) => {
-    const v    = attrs[k];
-    const canUp   = left > 0 && v < ATTR_MAX;
-    const canDown = v > 0;
-    return `<div class="attr-row">
-      <div class="attr-left">
-        <span class="attr-label">${label}</span>
-        <span class="attr-effect">${ATTR_EFFECTS[k]||''}</span>
-      </div>
-      <div class="attr-ctrl">
-        <button class="attr-btn" onclick="adjAttr('${k}',-1)" ${canDown?'':' disabled'}>−</button>
-        <div class="attr-val${v===0?' zero':''}">${v}</div>
-        <button class="attr-btn" onclick="adjAttr('${k}',+1)" ${canUp?'':' disabled'}>+</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function usedPoints(){ return Object.values(attrs).reduce((s,v)=>s+v,0); }
-
-// Thay setAttr bằng adjAttr (delta-based, phù hợp với +/-)
-function adjAttr(k, delta) {
-  const next = attrs[k] + delta;
-  if (next < 0 || next > ATTR_MAX) return;
-  const usedAfter = usedPoints() - attrs[k] + next;
-  if (usedAfter > ATTR_TOTAL) return;
-  attrs[k] = next;
-  buildAttrRows();
-}
-// Giữ setAttr cũ làm alias để không crash code nào còn gọi
-function setAttr(k, v) { attrs[k] = Math.max(0, Math.min(ATTR_MAX, v)); buildAttrRows(); }
-
-// ── TUTORIAL SYSTEM ──────────────────────────────────
-let tutPage = 0;
-const TUT_PAGES = [
-  {
-    title:'🌍 Thế Giới Sau Thảm Họa',
-    html:`
-      <div class="tut-section">
-        <div class="tut-text">Thành phố đã sụp đổ. Zombie tràn ngập khắp nơi. Bạn là một trong số ít người còn sống sót, cố gắng thoát khỏi vùng thảm họa.</div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">MỤC TIÊU</div>
-        <div class="tut-card">
-          <div class="tut-card-title">🚇 Tìm đường thoát hiểm</div>
-          <div class="tut-card-text">Khám phá bản đồ để tìm Cửa Hầm Thoát Hiểm. Tọa độ +9,+9 từ vị trí ban đầu.</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">❤️ Sống sót mỗi ngày</div>
-          <div class="tut-card-text">Giữ HP, thức ăn, nước và tinh thần ổn định. Khi đói/khát về 0, bạn mất HP.</div>
-        </div>
-      </div>
-      <div class="tut-tip">💡 Mỗi ngày có 24 giờ. Khi ngủ, ngày mới bắt đầu và ĐHĐ phục hồi đầy.</div>`,
-  },
-  {
-    title:'⚡ Điểm Hành Động (ĐHĐ)',
-    html:`
-      <div class="tut-section">
-        <div class="tut-text">Mọi hành động đều tốn <b style="color:var(--amber)">Điểm Hành Động (ĐHĐ)</b>. Hết ĐHĐ → bạn kiệt sức, penalty ngày hôm sau.</div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">CHI PHÍ CÁC HÀNH ĐỘNG</div>
-        <div class="tut-card">
-          <div class="tut-card-title">🚶 Di chuyển</div>
-          <div class="tut-card-text">Đường phố: 1 ĐHĐ · Ngõ hẻm: 2 ĐHĐ · Đống đổ nát: 3 ĐHĐ<br>Ban đêm: +1 ĐHĐ · Có zombie: +1~2 ĐHĐ</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">⚔️ Chiến đấu & Lục đồ</div>
-          <div class="tut-card-text">Lục soát: 2-3 ĐHĐ · Chiến đấu: 3-5 ĐHĐ<br>Barricade: 3 ĐHĐ · Nghỉ ngơi: 1 ĐHĐ</div>
-        </div>
-      </div>
-      <div class="tut-tip">💡 ĐHĐ tự hồi 1 điểm mỗi 4 phút thực tế. Ngủ sẽ hồi toàn bộ ngay lập tức.</div>`,
-  },
-  {
-    title:'⚔️ Chiến Đấu & Vũ Khí',
-    html:`
-      <div class="tut-section">
-        <div class="tut-text">Chiến đấu dùng hệ thống D20 — tung xúc xắc 20 mặt. Cộng thêm kỹ năng và bonus vũ khí để vượt ngưỡng DC.</div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">BẢNG VŨ KHÍ</div>
-        <table class="tut-wpn-table">
-          <thead><tr><th>Loại</th><th>Sát thương</th><th>Tiếng ồn</th><th>Đặc điểm</th></tr></thead>
-          <tbody>
-            <tr><td>🔪 Dao</td><td>1.0 ~ 2.5</td><td>Rất thấp</td><td>Nhanh, ám sát x2</td></tr>
-            <tr><td>🔨 Gậy/Búa</td><td>0.8 ~ 4.5</td><td>Vừa-Cao</td><td>Bền, sát thương diện</td></tr>
-            <tr><td>🔫 Súng</td><td style="color:#C0392B">6.0+</td><td style="color:#C0392B">CỰC ỒN</td><td>Xuyên giáp, cần đạn, alert 3 tile!</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">CÁC CHẾ ĐỘ CHIẾN ĐẤU</div>
-        <div class="tut-card">
-          <div class="tut-card-title">🗡️ Ám sát — Yên tĩnh nhất</div>
-          <div class="tut-card-text">Cần sneak ≥ 2. Không tạo tiếng ồn. Dao nhân sát thương x2-2.5.</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">💪 Đòn mạnh — Sát thương cao nhất</div>
-          <div class="tut-card-text">+2 AP. Sát thương x1.8 nhưng độ bền giảm nhanh hơn.</div>
-        </div>
-        <div class="tut-card tut-danger-card">
-          <div class="tut-card-title" style="color:#C0392B">⚠️ Khi nào KHÔNG dùng súng</div>
-          <div class="tut-card-text">Súng nổ thu hút zombie trong 3 tile xung quanh. Không dùng khi ở trung tâm bản đồ!</div>
-        </div>
-      </div>`,
-  },
-  {
-    title:'🎒 Sinh Tồn & Tài Nguyên',
-    html:`
-      <div class="tut-section">
-        <div class="tut-section-label">CHỈ SỐ CẦN THEO DÕI</div>
-        <div class="tut-card">
-          <div class="tut-card-title">❤️ HP — Sinh mệnh</div>
-          <div class="tut-card-text">Về 0 → Game Over. Dùng băng bó, thuốc, bộ sơ cứu để hồi HP.</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">🍖 Đói / 💧 Khát</div>
-          <div class="tut-card-text">Giảm dần theo thời gian. Về 0 → mất HP từ từ. Ăn uống thường xuyên!</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">😰 Stress & Hoảng loạn</div>
-          <div class="tut-card-text">Chiến đấu nhiều → tăng stress. Khi stress cao → depression. Nghỉ ngơi, ngủ để giảm.</div>
-        </div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">ĐỊA ĐIỂM QUAN TRỌNG</div>
-        <div class="tut-card"><div class="tut-card-title">🏥 Bệnh viện (+5N, -3T từ spawn)</div><div class="tut-card-text">Vật tư y tế phong phú. Nhiều zombie. Đáng mạo hiểm nếu HP thấp.</div></div>
-        <div class="tut-card"><div class="tut-card-title">🚔 Đồn Cảnh Sát (-4T, +4N)</div><div class="tut-card-text">Vũ khí, đạn, áo giáp. Zombie nhanh nhiều. Nguy hiểm nhưng giá trị cao.</div></div>
-        <div class="tut-card"><div class="tut-card-title">🛡 Hầm B-17 (-8T, -7N)</div><div class="tut-card-text">Kho vũ khí quân sự. An toàn nhất để đặt căn cứ.</div></div>
-      </div>`,
-  },
-  {
-    title:'🧱 Barricade & Trang Bị',
-    html:`
-      <div class="tut-section">
-        <div class="tut-text">Trang bị vũ khí và áo giáp để tăng sức chiến đấu. Barricade để bảo vệ nơi trú ẩn.</div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">TRANG BỊ</div>
-        <div class="tut-card">
-          <div class="tut-card-title">⚔️ Vào Tab ĐỒ để trang bị</div>
-          <div class="tut-card-text">Nhặt vũ khí → vào tab 🛡 ĐỒ → nhấn TRANG BỊ. Vũ khí trang bị mới tính sát thương.</div>
-        </div>
-        <div class="tut-card">
-          <div class="tut-card-title">🔧 Độ bền vũ khí</div>
-          <div class="tut-card-text">Mỗi lần chiến đấu giảm độ bền. Vũ khí gần hỏng (-60%) → giảm sát thương. Thay vũ khí mới!</div>
-        </div>
-      </div>
-      <div class="tut-section">
-        <div class="tut-section-label">BARRICADE</div>
-        <div class="tut-card">
-          <div class="tut-card-title">🧱 Gia cố nơi trú ẩn</div>
-          <div class="tut-card-text">Cần vật liệu (búa, xà beng, gậy...) + 3 ĐHĐ. Tối đa 5 lớp. Mỗi lớp giảm zombie tấn công ban đêm.</div>
-        </div>
-      </div>
-      <div class="tut-tip">💡 Lời khuyên: Ngày 1-3 hãy khám phá gần nhà, tìm đồ ăn và vũ khí cơ bản trước khi mạo hiểm xa.</div>`,
-  },
-];
-
-// tutFinishCb: hàm gọi sau khi tutorial kết thúc (vào game)
-let tutFinishCb = null;
-
-function tutOpen(onFinish) {
-  tutPage     = 0;
-  tutFinishCb = onFinish || null;
-
-  // Gắn event listener MỘT LẦN bằng cách clone button
-  ['tut-prev','tut-next','tut-skip'].forEach(id => {
-    const old = document.getElementById(id);
-    if (!old) return;
-    const fresh = old.cloneNode(true);
-    old.parentNode.replaceChild(fresh, old);
-  });
-  document.getElementById('tut-prev').addEventListener('click', () => _tutNav(-1));
-  document.getElementById('tut-next').addEventListener('click', () => _tutNav(1));
-  document.getElementById('tut-skip').addEventListener('click', () => _tutDone());
-
-  document.getElementById('tutorial-overlay').classList.add('show');
-  _tutRender();
-}
-
-function _tutNav(dir) {
-  tutPage += dir;
-  if (tutPage < 0) { tutPage = 0; return; }
-  if (tutPage >= TUT_PAGES.length) { _tutDone(); return; }
-  _tutRender();
-}
-
-function _tutDone() {
-  document.getElementById('tutorial-overlay').classList.remove('show');
-  if (tutFinishCb) {
-    const cb = tutFinishCb;
-    tutFinishCb = null;
-    cb(); // vào game nếu mở từ nút BẮT ĐẦU
-  }
-  // Nếu mở bằng nút ?, chỉ đóng overlay — không làm gì thêm
-}
-
-// alias dùng chỗ khác
-function tutClose() { _tutDone(); }
-
-function _tutRender() {
-  const total = TUT_PAGES.length;
-  const page  = TUT_PAGES[tutPage];
-
-  document.getElementById('tut-progress').innerHTML = TUT_PAGES.map((_,i) =>
-    '<div class="tut-dot ' + (i < tutPage ? 'done' : i === tutPage ? 'active' : '') + '"></div>'
-  ).join('');
-
-  const pagesEl = document.getElementById('tut-pages');
-  pagesEl.innerHTML = '<div class="tut-page active"><div class="tut-page-title">' +
-    page.title + '</div>' + page.html + '</div>';
-  pagesEl.scrollTop = 0;
-
-  document.getElementById('tut-prev').style.display = tutPage > 0 ? '' : 'none';
-  const nb = document.getElementById('tut-next');
-  nb.textContent = tutPage >= total - 1 ? '✓ BẮT ĐẦU!' : 'Tiếp theo →';
-  nb.className   = 'tut-nav-btn primary';
-}
-
-async function UI_startGame() {
-  const name = (document.getElementById('char-name').value.trim()) || 'Người lạ';
-  // Không cần kiểm tra API key — đã giữ bí mật trên Worker proxy
-
-  // Lưu tên/job/attrs để dùng sau tutorial
-  const _name = name, _job = selectedJob, _attrs = {...attrs};
-
-  async function _doStart() {
-    localStorage.setItem('dw_tutorial_seen', '1');
-    showIntro('Đang tạo thế giới...');
-    await sleep(300);
-    DW_newGame(_name, _job, _attrs);
-    await UI_enter();
+    // Events
+    document.getElementById('dwa-close-btn').addEventListener('click', hide);
+    document.getElementById('dwa-btn-fight').addEventListener('click', function () {
+      _doAttack('normal');
+    });
+    document.getElementById('dwa-btn-heavy').addEventListener('click', function () {
+      _doAttack('heavy');
+    });
+    document.getElementById('dwa-btn-stealth').addEventListener('click', function () {
+      _doAttack('stealth');
+    });
+    document.getElementById('dwa-btn-rest').addEventListener('click', _doThreatRound);
+    document.getElementById('dwa-btn-flee').addEventListener('click', _doFlee);
+    document.getElementById('dwa-btn-role').addEventListener('click', _doRoleSkill);
   }
 
-  if (!localStorage.getItem('dw_tutorial_seen')) {
-    tutOpen(_doStart);
-  } else {
-    await _doStart();
-  }
-}
+  // ── PIXEL ART RENDERER ────────────────────────────
+  // Mỗi "pixel block" là TILE_W x TILE_H trên Canvas
 
-async function UI_loadGame() {
-  showIntro('Đang tải game...');
-  const result = DW_load(); // shim đã wrap: auto gs.init + trả về { state, offlineHours }
-  if (!result || !result.state) { hideIntro(); showNotif('Không tìm thấy save.','danger'); return; }
-  await UI_enter();
-}
+  // Vẽ 1 ô đất (ground tile)
+  function _drawGround(x, y) {
+    var cx = x * TILE_W;
+    var cy = y * TILE_H;
+    var alt = (x + y) % 2 === 0;
 
-async function UI_enter() {
-  document.getElementById('s-create').classList.remove('active');
-  document.getElementById('s-game').classList.add('active');
+    _ctx.fillStyle = alt ? PAL.ground : PAL.ground2;
+    _ctx.fillRect(cx, cy, TILE_W, TILE_H);
 
-  UI_renderAll();
-  hideIntro();
-
-  // Rebind DW_generateRumor engine function (engine-world.js loads before shim)
-  if (typeof _DW_generateRumor_engine === 'undefined' || !_DW_generateRumor_engine) {
-    // engine-world.js defines DW_generateRumor(state) with 1 arg
-    // shim wraps it as DW_generateRumor() with 0 args
-    // We need to capture the original before shim overwrites
-    // At this point shim has already overwritten it — check _raw
-    if (typeof _raw !== 'undefined' && _raw.DW_generateRumor) {
-      window._DW_generateRumor_engine = _raw.DW_generateRumor;
+    // Vết nứt ngẫu nhiên dựa vào tọa độ (deterministic)
+    var seed = (x * 31 + y * 17) % 7;
+    if (seed < 2) {
+      _ctx.fillStyle = PAL.crack;
+      _ctx.fillRect(cx + seed * 4 + 6, cy + 8, 1, 6);
+      _ctx.fillRect(cx + seed * 4 + 7, cy + 12, 2, 1);
     }
   }
 
-  // Start real-time AP regen loop
-  UI_startApRegen();
+  // Vẽ tường phía sau (row 0 và 1)
+  function _drawWall(x, y) {
+    var cx = x * TILE_W;
+    var cy = y * TILE_H;
 
-  // AI description for spawn tile
-  const tile = DW_currentTile();
-  if (!tile.desc) await UI_aiDescribeTile(tile);
-  UI_renderTilePanel();
-}
+    _ctx.fillStyle = (x % 3 === 0) ? PAL.wall2 : PAL.wall;
+    _ctx.fillRect(cx, cy, TILE_W, TILE_H);
 
-// ── AP REAL-TIME REGEN LOOP ───────────────────────────
-let apRegenInterval = null;
-function UI_startApRegen() {
-  if (apRegenInterval) clearInterval(apRegenInterval);
-  apRegenInterval = setInterval(() => {
-    if (!gs) return;
-    const gained    = DW_apRegenTick(1000);
-    const stmGained = (typeof DW_staminaRegenTick === 'function') ? DW_staminaRegenTick(1000) : 0;
-    const p = gs.player;
+    // Gạch pattern
+    var brickRow = Math.floor(cy / 8);
+    var offsetX  = (brickRow % 2 === 0) ? 0 : 12;
+    _ctx.fillStyle = PAL.crack;
+    for (var bx = offsetX; bx < TILE_W; bx += 16) {
+      _ctx.fillRect(cx + bx, cy, 1, TILE_H);
+    }
+    _ctx.fillRect(cx, cy, TILE_W, 1);
+  }
 
-    // Header AP timer
-    const timerEl = document.getElementById('ap-regen-timer');
-    if (timerEl) {
-      if (p.ap >= p.maxAp) {
-        timerEl.textContent = '● ĐHĐ ĐẦY';
-        timerEl.className = 'ap-regen-timer ready';
+  // Lửa / debris (background decoration)
+  function _drawFire(cx, cy, t) {
+    var phases = PAL.fire;
+    var fi = Math.floor(t / 4) % phases.length;
+    // Thân lửa
+    _ctx.fillStyle = phases[fi];
+    _ctx.fillRect(cx + 10, cy + 14, 4, 8);
+    _ctx.fillRect(cx + 8,  cy + 18, 8, 5);
+    // Lõi trắng
+    _ctx.fillStyle = '#ffeeaa';
+    _ctx.fillRect(cx + 11, cy + 17, 2, 4);
+    // Khói
+    var alpha = 0.2 + 0.15 * Math.sin(t * 0.1);
+    _ctx.fillStyle = 'rgba(60,50,40,' + alpha + ')';
+    _ctx.fillRect(cx + 8, cy + 6, 8, 8);
+  }
+
+  // Vẽ player character (pixel art 16x22)
+  function _drawPlayer(px, py, flashColor) {
+    var cx = Math.round(px);
+    var cy = Math.round(py);
+
+    if (flashColor) {
+      _ctx.fillStyle = flashColor;
+      _ctx.fillRect(cx - 2, cy - 2, 22, 28);
+    }
+
+    // Đầu
+    _ctx.fillStyle = PAL.player;
+    _ctx.fillRect(cx + 4, cy, 10, 10);
+    // Mắt
+    _ctx.fillStyle = '#222';
+    _ctx.fillRect(cx + 6, cy + 3, 2, 2);
+    _ctx.fillRect(cx + 10, cy + 3, 2, 2);
+    // Tóc
+    _ctx.fillStyle = '#443322';
+    _ctx.fillRect(cx + 4, cy, 10, 2);
+    _ctx.fillRect(cx + 4, cy + 2, 2, 2);
+    // Thân
+    _ctx.fillStyle = PAL.playerShirt;
+    _ctx.fillRect(cx + 2, cy + 10, 14, 10);
+    // Bóng tối áo
+    _ctx.fillStyle = PAL.playerShirt2;
+    _ctx.fillRect(cx + 2, cy + 18, 14, 2);
+    // Tay trái
+    _ctx.fillStyle = PAL.player;
+    _ctx.fillRect(cx, cy + 10, 2, 8);
+    // Tay phải
+    _ctx.fillRect(cx + 16, cy + 10, 2, 8);
+    // Chân
+    _ctx.fillStyle = '#2a2030';
+    _ctx.fillRect(cx + 3, cy + 20, 5, 6);
+    _ctx.fillRect(cx + 10, cy + 20, 5, 6);
+    // Giày
+    _ctx.fillStyle = '#1a1015';
+    _ctx.fillRect(cx + 2, cy + 24, 6, 2);
+    _ctx.fillRect(cx + 10, cy + 24, 6, 2);
+  }
+
+  // Vẽ zombie (pixel art 14x22, màu xanh xám)
+  function _drawZombie(px, py, type, t, flash) {
+    var cx = Math.round(px);
+    var cy = Math.round(py);
+
+    if (flash) {
+      _ctx.fillStyle = '#ff4400';
+      _ctx.fillRect(cx - 2, cy - 2, 20, 28);
+    }
+
+    var bodyCol  = type === 'zombie_fast' ? '#506845' : PAL.zombie;
+    var bodyCol2 = type === 'zombie_fast' ? '#3d5034' : PAL.zombie2;
+    var darkCol  = PAL.zombieDark;
+
+    // Đầu zombie — lớn hơn, méo
+    _ctx.fillStyle = bodyCol;
+    _ctx.fillRect(cx + 2, cy, 12, 11);
+    // Vết thương trên đầu
+    _ctx.fillStyle = PAL.blood;
+    _ctx.fillRect(cx + 5, cy, 4, 2);
+    // Mắt đỏ phát sáng
+    _ctx.fillStyle = PAL.zombieEye;
+    _ctx.fillRect(cx + 4, cy + 3, 2, 2);
+    _ctx.fillRect(cx + 10, cy + 3, 2, 2);
+    // Pupil trắng nhỏ (flicker)
+    if (Math.floor(t / 15) % 3 !== 0) {
+      _ctx.fillStyle = '#ffcccc';
+      _ctx.fillRect(cx + 4, cy + 3, 1, 1);
+      _ctx.fillRect(cx + 10, cy + 3, 1, 1);
+    }
+    // Miệng há
+    _ctx.fillStyle = '#1a0808';
+    _ctx.fillRect(cx + 5, cy + 7, 6, 2);
+    _ctx.fillStyle = '#cc1100';
+    _ctx.fillRect(cx + 6, cy + 8, 4, 1);
+
+    // Thân — rách
+    _ctx.fillStyle = bodyCol2;
+    _ctx.fillRect(cx + 1, cy + 11, 14, 10);
+    _ctx.fillStyle = darkCol;
+    _ctx.fillRect(cx + 1, cy + 19, 14, 2);
+    // Rách áo
+    _ctx.fillStyle = bodyCol;
+    _ctx.fillRect(cx + 7, cy + 13, 2, 5);
+    _ctx.fillRect(cx + 4, cy + 15, 2, 3);
+
+    // Tay vươn ra (animation)
+    var armSwing = Math.sin(t * 0.08) * 2;
+    _ctx.fillStyle = bodyCol;
+    _ctx.fillRect(cx - 2, cy + 11 + Math.round(armSwing), 3, 9);
+    _ctx.fillRect(cx + 15, cy + 11 - Math.round(armSwing), 3, 9);
+
+    // Chân
+    _ctx.fillStyle = darkCol;
+    var legL = Math.sin(t * 0.08) > 0 ? 1 : 0;
+    _ctx.fillRect(cx + 2, cy + 21, 4, 5 + legL);
+    _ctx.fillRect(cx + 10, cy + 21, 4, 5 - legL + 1);
+    // Vết máu dưới chân
+    _ctx.fillStyle = PAL.blood2;
+    _ctx.fillRect(cx + 2, cy + 25, 4, 1);
+    _ctx.fillRect(cx + 10, cy + 25, 4, 1);
+  }
+
+  // Vẽ boss (to hơn, màu đậm hơn)
+  function _drawBoss(px, py, bossId, t) {
+    var cx = Math.round(px);
+    var cy = Math.round(py);
+    var scale = 1.6;
+
+    // Glow hào quang đỏ
+    var gAlpha = 0.1 + 0.08 * Math.sin(t * 0.05);
+    _ctx.fillStyle = 'rgba(200,30,0,' + gAlpha + ')';
+    _ctx.fillRect(cx - 8, cy - 4, Math.round(20 * scale) + 16, Math.round(26 * scale) + 8);
+
+    // Thân boss (to hơn zombie thường)
+    _ctx.fillStyle = '#3a2820';
+    _ctx.fillRect(cx, cy, Math.round(20 * scale), Math.round(26 * scale));
+
+    // Đầu
+    _ctx.fillStyle = '#4a3828';
+    _ctx.fillRect(cx + 4, cy, Math.round(14 * scale), Math.round(12 * scale));
+
+    // Mắt boss — 3 mắt
+    _ctx.fillStyle = '#ff2200';
+    _ctx.fillRect(cx + 6,  cy + 4, 3, 3);
+    _ctx.fillRect(cx + 13, cy + 4, 3, 3);
+    _ctx.fillRect(cx + 10, cy + 2, 2, 2); // mắt thứ ba
+    // Flicker
+    if (Math.floor(t / 10) % 2 === 0) {
+      _ctx.fillStyle = '#ff8866';
+      _ctx.fillRect(cx + 6, cy + 4, 1, 1);
+      _ctx.fillRect(cx + 13, cy + 4, 1, 1);
+    }
+
+    // Nanh
+    _ctx.fillStyle = '#ffe0a0';
+    _ctx.fillRect(cx + 8,  cy + 10, 2, 4);
+    _ctx.fillRect(cx + 14, cy + 10, 2, 4);
+
+    // Thân to
+    _ctx.fillStyle = '#382018';
+    _ctx.fillRect(cx + 2, cy + 18, Math.round(18 * scale), 16);
+
+    // Tay khổng lồ
+    var swing = Math.round(Math.sin(t * 0.06) * 3);
+    _ctx.fillStyle = '#2a1810';
+    _ctx.fillRect(cx - 4, cy + 16 + swing, 6, 14);
+    _ctx.fillRect(cx + Math.round(16 * scale), cy + 16 - swing, 6, 14);
+
+    // Nhãn boss
+    _ctx.fillStyle = '#ff4400';
+    _ctx.font = 'bold 7px "Share Tech Mono",monospace';
+    _ctx.textAlign = 'center';
+    _ctx.fillText('BOSS', cx + Math.round(10 * scale), cy - 4);
+  }
+
+  // ── EFFECTS RENDERER ──────────────────────────────
+
+  // Thêm hiệu ứng vào queue
+  function _addEffect(type, x, y, opts) {
+    _arena.effects.push(Object.assign({ type: type, x: x, y: y, life: 0, maxLife: opts.maxLife || 20 }, opts));
+  }
+
+  // Vẽ tất cả hiệu ứng
+  function _drawEffects(t) {
+    var survivors = [];
+    for (var i = 0; i < _arena.effects.length; i++) {
+      var e = _arena.effects[i];
+      e.life++;
+      var progress = e.life / e.maxLife; // 0 → 1
+      var alpha    = 1 - progress;
+
+      if (e.type === 'slash') {
+        // Đường chém — màu vàng/trắng
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.strokeStyle = progress < 0.3 ? PAL.slash : PAL.slash2;
+        _ctx.lineWidth   = 3 - progress * 2;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x,          e.y + e.len * 0.5);
+        _ctx.lineTo(e.x + e.len,  e.y - e.len * 0.3);
+        _ctx.stroke();
+        // Đường chém thứ hai (echo)
+        _ctx.globalAlpha = alpha * 0.5;
+        _ctx.strokeStyle = '#ffffff';
+        _ctx.lineWidth = 1;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x + 2,       e.y + e.len * 0.5 - 2);
+        _ctx.lineTo(e.x + e.len - 2, e.y - e.len * 0.3 - 2);
+        _ctx.stroke();
+        _ctx.restore();
+
+      } else if (e.type === 'bullet') {
+        // Viên đạn bay
+        var bx = e.x + (e.tx - e.x) * progress;
+        var by = e.y + (e.ty - e.y) * progress;
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle = PAL.bullet;
+        _ctx.fillRect(bx - 3, by - 1, 6, 2);
+        // Đuôi đạn
+        _ctx.fillStyle = '#ffaa00';
+        _ctx.fillRect(bx - 7, by - 1, 5, 2);
+        _ctx.restore();
+
+      } else if (e.type === 'laser') {
+        // Tia laser xanh (firearm high-level)
+        _ctx.save();
+        _ctx.globalAlpha = alpha * 0.9;
+        _ctx.strokeStyle = PAL.laser2;
+        _ctx.lineWidth   = 4;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x, e.y);
+        _ctx.lineTo(e.tx, e.ty);
+        _ctx.stroke();
+        _ctx.strokeStyle = PAL.laser;
+        _ctx.lineWidth = 2;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x, e.y);
+        _ctx.lineTo(e.tx, e.ty);
+        _ctx.stroke();
+        // Đầu laser sáng
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle = '#ffffff';
+        _ctx.fillRect(e.tx - 3, e.ty - 3, 6, 6);
+        _ctx.restore();
+
+      } else if (e.type === 'beam_red') {
+        // Tia đỏ boss
+        _ctx.save();
+        _ctx.globalAlpha = alpha * 0.85;
+        _ctx.strokeStyle = PAL.beam_red2;
+        _ctx.lineWidth   = 6;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x, e.y);
+        _ctx.lineTo(e.tx, e.ty);
+        _ctx.stroke();
+        _ctx.strokeStyle = PAL.beam_red;
+        _ctx.lineWidth = 2;
+        _ctx.beginPath();
+        _ctx.moveTo(e.x, e.y);
+        _ctx.lineTo(e.tx, e.ty);
+        _ctx.stroke();
+        _ctx.restore();
+
+      } else if (e.type === 'hit_number') {
+        // Số sát thương nổi lên
+        var ny = e.y - progress * 30;
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle   = e.color || '#ff4400';
+        _ctx.font        = 'bold ' + (e.big ? '14px' : '11px') + ' "Bebas Neue",sans-serif';
+        _ctx.textAlign   = 'center';
+        _ctx.fillText(e.text, e.x, ny);
+        _ctx.restore();
+
+      } else if (e.type === 'explosion') {
+        // Vụ nổ nhỏ — vòng tròn mở rộng
+        var radius = progress * e.maxR;
+        _ctx.save();
+        _ctx.globalAlpha = alpha * 0.7;
+        _ctx.strokeStyle = '#ff6600';
+        _ctx.lineWidth   = 3;
+        _ctx.beginPath();
+        _ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+        _ctx.stroke();
+        _ctx.globalAlpha = alpha * 0.3;
+        _ctx.fillStyle   = '#ff3300';
+        _ctx.fill();
+        _ctx.restore();
+
+      } else if (e.type === 'blood_splat') {
+        // Máu bắn
+        _ctx.save();
+        _ctx.globalAlpha = alpha * 0.8;
+        for (var bi = 0; bi < e.drops.length; bi++) {
+          var d = e.drops[bi];
+          _ctx.fillStyle = d.dark ? PAL.blood2 : PAL.blood;
+          _ctx.fillRect(
+            e.x + d.dx * progress * e.maxLen,
+            e.y + d.dy * progress * e.maxLen,
+            d.size, d.size
+          );
+        }
+        _ctx.restore();
+
+      } else if (e.type === 'miss_text') {
+        var my = e.y - progress * 20;
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle   = PAL.miss;
+        _ctx.font        = '10px "Share Tech Mono",monospace';
+        _ctx.textAlign   = 'center';
+        _ctx.fillText('MISS', e.x, my);
+        _ctx.restore();
+
+      } else if (e.type === 'player_dmg_text') {
+        // Số sát thương player nhận — màu đỏ bay lên
+        var py2 = e.y - progress * 24;
+        _ctx.save();
+        _ctx.globalAlpha = alpha;
+        _ctx.fillStyle   = '#ff3333';
+        _ctx.font        = 'bold 12px "Share Tech Mono",monospace';
+        _ctx.textAlign   = 'center';
+        _ctx.fillText('-' + (e.dmg || '?'), e.x, py2);
+        _ctx.restore();
+      }
+
+      if (e.life < e.maxLife) survivors.push(e);
+    }
+    _arena.effects = survivors;
+  }
+
+  // ── MAIN RENDER LOOP ──────────────────────────────
+  function _render() {
+    if (!_visible) return;
+    _tick++;
+    _ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // 1) Background — tường + sàn
+    for (var gy = 0; gy < ROWS; gy++) {
+      for (var gx = 0; gx < COLS; gx++) {
+        if (gy < 2) _drawWall(gx, gy);
+        else        _drawGround(gx, gy);
+      }
+    }
+
+    // 2) Decoration — xe cháy, lửa background
+    _ctx.save();
+    // Xe phế liệu bên trái
+    _ctx.fillStyle = '#2a2018';
+    _ctx.fillRect(0, TILE_H * 2, TILE_W * 2, TILE_H * 1.5);
+    _ctx.fillStyle = '#1a1410';
+    _ctx.fillRect(2, TILE_H * 2 + 4, TILE_W * 2 - 4, TILE_H * 1.5 - 8);
+    // Bánh xe
+    _ctx.fillStyle = '#111';
+    _ctx.fillRect(2,          TILE_H * 3 + 4, 8, 8);
+    _ctx.fillRect(TILE_W * 2 - 10, TILE_H * 3 + 4, 8, 8);
+    // Lửa trên xe
+    _drawFire(TILE_W - 4, TILE_H * 2, _tick);
+    _ctx.restore();
+
+    // Thùng phuy bên phải
+    _ctx.fillStyle = '#2a2020';
+    _ctx.fillRect(CANVAS_W - TILE_W - 4, TILE_H * 2 + 4, TILE_W - 4, TILE_H * 1.5);
+    _ctx.fillStyle = '#1a1414';
+    _ctx.fillRect(CANVAS_W - TILE_W,     TILE_H * 2 + 8, TILE_W - 10, 4);
+    _drawFire(CANVAS_W - TILE_W * 2 + 4, TILE_H * 2 + 4, _tick + 8);
+
+    // Barricade / pallets background
+    _ctx.fillStyle = '#2a1a0a';
+    _ctx.fillRect(TILE_W * 4, TILE_H * 2, TILE_W * 4, 8);
+    _ctx.fillStyle = '#1e1206';
+    for (var pi = 0; pi < 4; pi++) {
+      _ctx.fillRect(TILE_W * 4 + pi * TILE_W + 2, TILE_H * 2 + 2, TILE_W - 6, 3);
+    }
+
+    // 3) Enemies
+    for (var ei = 0; ei < _arena.enemies.length; ei++) {
+      var enemy = _arena.enemies[ei];
+      if (enemy.dead) continue;
+
+      // HP bar trên đầu
+      var hpRatio = Math.max(0, enemy.hp / enemy.maxHp);
+      var barW = TILE_W - 4;
+      _ctx.fillStyle = '#1a0808';
+      _ctx.fillRect(enemy.px + 2, enemy.py - 6, barW, 3);
+      var hpColor = hpRatio > 0.5 ? PAL.hp_full : PAL.hp_low;
+      _ctx.fillStyle = hpColor;
+      _ctx.fillRect(enemy.px + 2, enemy.py - 6, Math.round(barW * hpRatio), 3);
+
+      // Vẽ enemy sprite
+      var flashColor = (enemy.flashTimer > 0) ? PAL.hit : null;
+      if (enemy.flashTimer > 0) enemy.flashTimer--;
+
+      if (enemy.isBoss) {
+        _drawBoss(enemy.px, enemy.py, enemy.type, _tick);
       } else {
-        const secs = DW_getApRegenSeconds();
-        const m = Math.floor(secs / 60), s = secs % 60;
-        timerEl.textContent = `+1 ĐHĐ sau ${m}:${String(s).padStart(2,'0')}`;
-        timerEl.className = 'ap-regen-timer';
+        _drawZombie(enemy.px, enemy.py, enemy.type, _tick + ei * 7, flashColor !== null);
       }
+
+      // Số thứ tự nhỏ
+      _ctx.fillStyle = enemy.selected ? PAL.ui_amber : PAL.ui_dim;
+      _ctx.font = '8px "Share Tech Mono",monospace';
+      _ctx.textAlign = 'center';
+      _ctx.fillText(String(ei + 1), enemy.px + 9, enemy.py + 30);
     }
 
-    // Header STAMINA timer
-    const stmTimerEl = document.getElementById('stm-regen-timer');
-    if (stmTimerEl) {
-      const maxStm = p.maxStamina || 10;
-      const curStm = p.stamina ?? maxStm;
-      if (curStm >= maxStm) {
-        stmTimerEl.textContent = '● SB ĐẦY';
-        stmTimerEl.className = 'ap-regen-timer ready';
-      } else {
-        const secs = (typeof DW_getStaminaRegenSeconds === 'function') ? DW_getStaminaRegenSeconds() : 30;
-        stmTimerEl.textContent = `+1 SB sau ${secs}s`;
-        stmTimerEl.className = 'ap-regen-timer';
-      }
+    // 4) Player
+    var pFlash = (_arena.player.flashTimer > 0) ? _arena.player.flashColor : null;
+    if (_arena.player.flashTimer > 0) _arena.player.flashTimer--;
+    _drawPlayer(_arena.player.px, _arena.player.py, pFlash);
+
+    // 5) Effects (trên mọi thứ)
+    _drawEffects(_tick);
+
+    // 6) Vignette overlay
+    var vGrad = _ctx.createRadialGradient(
+      CANVAS_W * 0.5, CANVAS_H * 0.5, CANVAS_H * 0.2,
+      CANVAS_W * 0.5, CANVAS_H * 0.5, CANVAS_H * 0.9
+    );
+    vGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    vGrad.addColorStop(1, 'rgba(0,0,0,0.45)');
+    _ctx.fillStyle = vGrad;
+    _ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    _raf = requestAnimationFrame(_render);
+  }
+
+  // ── LAYOUT HELPERS ────────────────────────────────
+
+  // Tính vị trí pixel của mỗi enemy theo layout
+  function _enemyPixelPos(index, total) {
+    // Dàn enemy phía trên, player ở dưới giữa
+    var spread = Math.min(total, 6);
+    var startX = Math.floor((COLS - spread) / 2);
+    var col    = startX + (index % spread);
+    var row    = 2 + Math.floor(index / spread);
+    return {
+      px: col * TILE_W + 4,
+      py: row * TILE_H + 2,
+    };
+  }
+
+  function _playerPixelPos() {
+    return {
+      px: Math.floor(COLS / 2) * TILE_W - 8,
+      py: (ROWS - 2) * TILE_H,
+    };
+  }
+
+  // ── COMBAT HELPERS ────────────────────────────────
+
+  // Spawn blood effect
+  function _spawnBlood(targetPx, targetPy, dmg) {
+    var drops = [];
+    for (var i = 0; i < 8; i++) {
+      drops.push({
+        dx: (Math.random() - 0.5) * 2,
+        dy: (Math.random() - 0.5) * 2,
+        size: Math.random() < 0.3 ? 3 : 2,
+        dark: Math.random() < 0.4,
+      });
     }
-
-    // HUD timer (Fix 7)
-    const hudTimer = document.getElementById('ap-regen-timer-hud');
-    if (hudTimer) {
-      if (p.ap >= p.maxAp) {
-        hudTimer.textContent = '⚡ ĐHĐ đầy';
-        hudTimer.style.color = 'var(--green)';
-      } else {
-        const secs = DW_getApRegenSeconds ? DW_getApRegenSeconds() : 0;
-        const m = Math.floor(secs / 60), s = secs % 60;
-        hudTimer.textContent = `+1 ĐHĐ sau ${m}:${String(s).padStart(2,'0')}`;
-        hudTimer.style.color = '#2a2a2a';
-      }
-    }
-
-    if (gained || stmGained) {
-      UI_renderHeader();
-      UI_renderSurvivalHUD();
-      UI_renderContextActions();
-      if (gained && p.ap === p.maxAp) showNotif('⚡ ĐHĐ đã đầy!', 'success');
-      if (stmGained && (p.stamina ?? 0) >= (p.maxStamina || 10)) showNotif('⚔ Sức bền đã hồi đầy!', 'info');
-    }
-  }, 1000);
-}
-
-// ── WORLD MAP ─────────────────────────────────────────
-const WM_SIGHT_RADIUS = 4; // tiles visible around player
-
-function UI_tab(name) {
-  // Reset equipment selection khi rời khỏi tab equip
-  if (activeTab === 'equip' && name !== 'equip') {
-    _equipSelectedIdx = -1;
-  }
-  activeTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab===name));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id==='tab-'+name));
-
-  if (name === 'log')   UI_renderLog();
-  if (name === 'equip') UI_renderEquipment();
-  if (name === 'craft') UI_renderCraft();
-  if (name === 'map')   { UI_renderWorldMap(); setTimeout(UI_worldMapCenter, 50); }
-  if (name === 'skill') UI_renderSkillTree();
-}
-
-// ══════════════════════════════════════════════════════
-// SKILL TREE TAB
-// ══════════════════════════════════════════════════════
-// Phân nhóm skill theo 3 cột
-const SKILL_COLUMNS = [
-  { label: '⚔ CHIẾN ĐẤU', skills: ['blade','blunt','firearm'] },
-  { label: '🏃 SINH TỒN',  skills: ['sneak','fitness','firstaid'] },
-  { label: '🧠 HỖ TRỢ',   skills: ['carpentry','mental'] },
-];
-
-function UI_renderSkillTree() {
-  if (!gs) return;
-  const p  = gs.player;
-  const sp = p.skillPoints || 0;
-
-  // Cập nhật SP counter
-  const spEl = document.getElementById('skill-sp-count');
-  if (spEl) spEl.textContent = sp;
-
-  const cols = document.getElementById('skill-columns');
-  if (!cols) return;
-
-  cols.innerHTML = SKILL_COLUMNS.map(col => {
-    const nodes = col.skills.map(key => _SK_renderNode(key, p, sp)).join('');
-    return `<div class="skill-col">
-      <div class="skill-col-label">${col.label}</div>
-      ${nodes}
-    </div>`;
-  }).join('');
-}
-
-function _SK_renderNode(key, player, sp) {
-  const def   = DW_SKILLS[key];
-  if (!def) return '';
-  const level = (player.skills || {})[key] || 0;
-  const cap   = typeof SKILL_LEVEL_CAP !== 'undefined' ? SKILL_LEVEL_CAP : 10;
-  const maxed = level >= cap;
-  const canLearn = sp > 0 && !maxed;
-
-  let stateClass = 'sk-locked';
-  if (maxed)          stateClass = 'sk-unlocked';
-  else if (level > 0) stateClass = 'sk-unlocked';
-  else if (canLearn)  stateClass = 'sk-available';
-
-  const dots = Array.from({length: Math.min(cap,10)}, (_,i) =>
-    `<div class="sk-dot${i < level ? ' filled' : ''}"></div>`).join('');
-
-  const lvlTxt = maxed ? `${level}/${cap} MAX` : level > 0 ? `${level}/${cap}` : canLearn ? 'CÓ THỂ HỌC' : '—';
-
-  // onclick chỉ học khi sk-available (có SP và chưa max)
-  const clickHandler = canLearn ? `onclick="UI_skLearn('${key}')"` : '';
-
-  return `<div class="sk-node ${stateClass}" onmouseenter="UI_skShowTooltip(event,'${key}')" onmouseleave="UI_skHideTooltip()" ${clickHandler}>
-    <div class="sk-node-head">
-      <div class="sk-icon">${def.icon}</div>
-      <div class="sk-name">${def.name}</div>
-      <div class="sk-level">${lvlTxt}</div>
-    </div>
-    <div class="sk-desc">${def.desc}</div>
-    <div class="sk-dots">${dots}</div>
-  </div>`;
-}
-
-// ── Helper: lấy effect rows từ SKILL_UNLOCK_EFFECTS hoặc role tree ──
-const _SK_EFFECT_LABELS = {
-  damage_bonus:'Sát thương',accuracy_bonus:'Chính xác',ap_cost_reduction:'Giảm AP',
-  heal_bonus:'Hồi máu',crit_chance:'Chí mạng',bleed_on_hit:'Chảy máu',
-  stun_chance:'Choáng',armor_break:'Phá giáp',stealth_bonus:'Tàng hình',
-  sneak_attack_bonus:'Tấn công lén',noise_reduction:'Giảm tiếng ồn',carry_bonus:'Sức mang',
-  sprint_bonus:'Tốc độ',bandage_efficiency:'Băng gạc',status_cure_bonus:'Chữa debuff',
-  stress_reduction:'Giảm stress',build_speed:'Tốc độ xây',barricade_hp:'HP rào cản',
-  craft_discount:'Giảm craft',headshot_chance:'Headshot',burst_unlocked:'Bắn liên thanh',
-  execute_threshold:'Hành quyết',cleave_damage:'Cleave',knockback_always:'Hất văng',
-};
-
-function _SK_getEffectRows(key, level) {
-  if (level <= 0) return [];
-  // 1. Base skills
-  if (typeof SKILL_UNLOCK_EFFECTS !== 'undefined') {
-    const entry = SKILL_UNLOCK_EFFECTS[key]?.[level];
-    if (entry) {
-      const rows = [];
-      for (const [k, v] of Object.entries(entry)) {
-        if (k === 'label') continue;
-        const lbl = _SK_EFFECT_LABELS[k] || k;
-        const val = typeof v === 'boolean' ? (v ? 'Mở khóa' : '') :
-                    (typeof v === 'number' && v > 0 && v < 2) ? `+${Math.round(v*100)}%` :
-                    (typeof v === 'number') ? `${v>0?'+':''}${v}` : v;
-        if (val) rows.push(`${lbl}: ${val}`);
-      }
-      if (rows.length) return rows;
-      const lbl = entry.label;
-      if (lbl) return [lbl];
-    }
-  }
-  // 2. Role tree (nếu có)
-  if (typeof DW_ROLE_TREES !== 'undefined' && gs?._state?.job) {
-    const entry = DW_ROLE_TREES[gs._state.job]?.[key]?.effects?.[level];
-    if (entry) {
-      const lbl = entry.label || entry.desc;
-      if (lbl) return [lbl];
-    }
-  }
-  return ['Không có thông tin chi tiết'];
-}
-
-// Tooltip — fixed: hover delay, current level, no stale interval
-let _skTooltipEl = null;
-let _skHideTimer = null;
-
-function UI_skShowTooltip(evt, key) {
-  if (!gs) return;
-  clearTimeout(_skHideTimer);
-  const def   = DW_SKILLS[key];
-  if (!def) return;
-  const p     = gs.player;
-  const sp    = p.skillPoints || 0;
-  const level = (p.skills || {})[key] || 0;
-  const cap   = typeof SKILL_LEVEL_CAP !== 'undefined' ? SKILL_LEVEL_CAP : 10;
-  const maxed = level >= cap;
-  const canLearn = sp > 0 && !maxed;
-  const nextLv   = Math.min(level + 1, cap);
-
-  // Block: HIỆN TẠI (nếu đã học)
-  let curHtml = '';
-  if (level > 0) {
-    const rows = _SK_getEffectRows(key, level);
-    if (rows.length && rows[0] !== 'Không có thông tin chi tiết') {
-      curHtml = `<div style="font-size:9px;color:#444;border-top:1px solid #1a1a1a;padding:5px 0 4px">
-        <div style="font-size:7px;color:#333;letter-spacing:1px;margin-bottom:3px">HIỆN TẠI — CẤP ${level}</div>
-        ${rows.map(r=>`<div style="color:#666">→ ${r}</div>`).join('')}
-      </div>`;
-    }
+    _addEffect('blood_splat', targetPx + 8, targetPy + 12, {
+      maxLife: 35, drops: drops, maxLen: 20,
+    });
+    _addEffect('explosion', targetPx + 8, targetPy + 12, {
+      maxLife: 12, maxR: 14,
+    });
+    _addEffect('hit_number', targetPx + 8, targetPy, {
+      maxLife: 30, text: '-' + dmg, color: '#ff4400',
+      big: dmg >= 5,
+    });
   }
 
-  // Block: LÊN CẤP TIẾP THEO
-  let fxHtml = '';
-  if (maxed) {
-    fxHtml = `<div style="color:#c08000;font-size:9px">✦ Đã đạt tối đa</div>`;
-  } else {
-    const rows = _SK_getEffectRows(key, nextLv);
-    fxHtml = rows.map(r=>`<div>→ ${r}</div>`).join('') || '<div style="color:#333">Không có dữ liệu</div>';
-  }
+  // Spawn projectile effect: player → target enemy
+  function _spawnProjectile(type, fromPx, fromPy, toPx, toPy) {
+    var sx = fromPx + 8;
+    var sy = fromPy + 10;
+    var tx = toPx + 8;
+    var ty = toPy + 12;
 
-  const btnClass = canLearn ? '' : 'disabled';
-  const btnTxt   = maxed ? 'ĐÃ ĐẠT TỐI ĐA' :
-                   canLearn ? `▶ HỌC CẤP ${nextLv}  (còn ${sp} điểm)` :
-                   sp <= 0  ? 'KHÔNG ĐỦ ĐIỂM KN' : 'KHÔNG ĐỦ ĐIỀU KIỆN';
-
-  if (!_skTooltipEl) {
-    _skTooltipEl = document.createElement('div');
-    _skTooltipEl.className = 'sk-tooltip';
-    _skTooltipEl.onmouseenter = () => clearTimeout(_skHideTimer);
-    _skTooltipEl.onmouseleave = () => UI_skHideTooltip();
-    document.body.appendChild(_skTooltipEl);
-  }
-
-  _skTooltipEl.innerHTML = `
-    <div class="sk-tt-name">${def.icon} ${def.name}</div>
-    <div style="font-size:8px;color:#444;margin-bottom:4px;letter-spacing:.5px">CẤP ${level}/${cap}</div>
-    <div class="sk-tt-desc">${def.desc}</div>
-    ${curHtml}
-    <div class="sk-tt-effects">
-      <div style="font-size:7px;color:#333;letter-spacing:1px;margin-bottom:3px">${maxed?'HIỆU ỨNG ĐẠT ĐƯỢC':`LÊN CẤP ${nextLv} SẼ ĐƯỢC`}</div>
-      ${fxHtml}
-    </div>
-    <div class="sk-tt-req">✦ ${sp} điểm KN còn lại</div>
-    <button class="sk-tt-btn ${btnClass}" onclick="UI_skLearn('${key}')">${btnTxt}</button>
-  `;
-  _skTooltipEl.style.display = 'block';
-
-  const r = evt.currentTarget.getBoundingClientRect();
-  const ttW = 224, ttH = 260;
-  let left = r.right + 6;
-  let top  = r.top;
-  if (left + ttW > window.innerWidth - 4) left = r.left - ttW - 6;
-  if (left < 4) left = 4;
-  if (top + ttH > window.innerHeight - 4) top = window.innerHeight - ttH - 4;
-  if (top < 4) top = 4;
-  _skTooltipEl.style.left = left + 'px';
-  _skTooltipEl.style.top  = top + 'px';
-}
-
-function UI_skHideTooltip() {
-  _skHideTimer = setTimeout(() => {
-    if (_skTooltipEl) _skTooltipEl.style.display = 'none';
-  }, 200);
-}
-
-function UI_skLearn(key) {
-  if (typeof DW_spendSP !== 'function') {
-    showNotif('Lỗi: DW_spendSP chưa được tải.', 'danger'); return;
-  }
-  const r = DW_spendSP(key);
-  if (!r) { showNotif('Lỗi không xác định.', 'danger'); return; }
-  if (!r.ok) { showNotif(r.msg || 'Không thể học.', 'danger'); return; }
-  if (_skTooltipEl) _skTooltipEl.style.display = 'none';
-  const def  = DW_SKILLS[key];
-  const newLv = (gs.player.skills||{})[key] || 1;
-  showNotif(`🔷 ${def?.name || key} → Cấp ${newLv}`, 'success');
-  UI_renderSkillTree();
-}
-
-function UI_renderWorldMap() {
-  if (!gs) return;
-  const s    = gs._state;
-  const size = DW_WORLD_SIZE;
-  const px   = s.x, py = s.y;
-  const grid = document.getElementById('wm-grid');
-  if (!grid) return;
-
-  // Update top bar
-  const coordEl = document.getElementById('wm-coords');
-  const dayEl   = document.getElementById('wm-day');
-  if (coordEl) coordEl.textContent = `X:${px-DW_SPAWN_X>=0?'+':''}${px-DW_SPAWN_X} Y:${py-DW_SPAWN_Y>=0?'+':''}${py-DW_SPAWN_Y}`;
-  if (dayEl)   dayEl.textContent   = `NGÀY ${s.day||1} ${String(s.hour||8).padStart(2,'0')}:${String(s.minute||0).padStart(2,'0')}`;
-
-  // Build grid
-  const cells = [];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      cells.push(_WM_renderCell(s, x, y, px, py));
-    }
-  }
-  grid.innerHTML = cells.join('');
-
-  // Set grid columns (24px matches CSS)
-  grid.style.gridTemplateColumns = `repeat(${size}, 24px)`;
-}
-
-function _WM_renderCell(s, x, y, px, py) {
-  const key       = `${x},${y}`;
-  const isPlayer  = x === px && y === py;
-  const explored  = (s.exploredTiles||[]).includes(key);
-  const distToP   = Math.max(Math.abs(x-px), Math.abs(y-py));
-  const isVisible = distToP <= WM_SIGHT_RADIUS;
-  const raw       = s.tiles?.[key];
-  const ttype     = raw?.type || 'street';
-  const tdef      = TILE_TYPES[ttype] || {};
-  const isAdj     = Math.abs(x-px)+Math.abs(y-py)===1;
-  const isBuilding= typeof BUILDING_TILE_TYPES!=='undefined' && BUILDING_TILE_TYPES.has(ttype);
-  const isImpass  = ttype==='river'||ttype==='mountain';
-  const hasBoss   = !!(s.activeBosses||{})[key] || (raw?.objects||[]).some(o=>o?.isBoss&&!o?.defeated);
-  const zCount    = raw ? (raw.objects||[]).filter(o=>OBJECT_DEFS?.[o?.type]?.type==='enemy'&&o?.alive!==false).length : 0;
-  const isDanger  = ttype==='zombie_nest'||ttype==='radiation';
-  const isRoad    = ttype==='road';
-  const isStreet  = ttype==='street';
-  const isRiver   = ttype==='river';
-  const isForest  = ttype==='forest';
-  const isField   = ttype==='field';
-  const isPark    = ttype==='park';
-
-  // ── Fog state ──────────────────────────────────────
-  let fogClass;
-  if (!explored && !isVisible) fogClass = 'wm-fog';
-  else if (explored && !isVisible) fogClass = 'wm-dim';
-  else fogClass = 'wm-visible';
-
-  if (isPlayer) fogClass += ' wm-player';
-  if (hasBoss)  fogClass += ' wm-boss';
-  if (isDanger) fogClass += ' wm-danger-zone';
-
-  // Terrain CSS classes (màu nền)
-  if (fogClass !== 'wm-fog') {
-    if (isRoad)   fogClass += ' wm-road';
-    if (isStreet) fogClass += ' wm-street';
-    if (isRiver)  fogClass += ' wm-river';
-    if (isForest) fogClass += ' wm-forest';
-    if (isField)  fogClass += ' wm-field';
-    if (isPark)   fogClass += ' wm-park';
-  }
-
-  // Moveable?
-  let moveAttr = '';
-  if (!isPlayer && isAdj && !isImpass && (explored || isVisible)) {
-    const apCost = MOVE_COST?.[ttype] || 1;
-    fogClass += ` wm-moveable${zCount>0?' wm-danger':''}`;
-    const dir = x<px?'w':x>px?'e':y<py?'n':'s';
-    moveAttr = `onclick="UI_wmMove('${dir}')" title="${raw?.name||tdef.name||ttype} (${apCost} ĐHĐ)"`;
-  } else if (isImpass) {
-    fogClass += ' wm-impassable';
-  }
-
-  // Landmark border
-  const isLandmark = raw?.special || isBuilding;
-  if (isLandmark && (explored || isVisible)) fogClass += ' wm-landmark';
-
-  // ── Content: tối giản — chỉ icon cho điểm đặc biệt ──
-  let icon = '';
-  let overlay = '';
-
-  if (fogClass.includes('wm-fog')) {
-    // Fog — không icon, chỉ pattern CSS
-    icon = '';
-  } else if (isPlayer) {
-    icon = `<span style="font-size:12px">🧍</span><div class="wm-player-dot"></div>`;
-    if (zCount) overlay += `<div class="wm-z">•${zCount>1?zCount:''}</div>`;
-  } else if (explored || isVisible) {
-    if (hasBoss) {
-      // Boss: icon nổi bật
-      icon = '<span style="font-size:11px;color:var(--blood-bright)">☠</span>';
-    } else if (isDanger) {
-      icon = ttype==='radiation'
-        ? '<span class="wm-terrain-icon">☣</span>'
-        : '<span class="wm-terrain-icon" style="color:#8b2020">☠</span>';
-    } else if (isRiver) {
-      // Sông: wave icon nhỏ
-      icon = '<span class="wm-terrain-icon" style="color:#1a4060">〜</span>';
-    } else if (isForest || isField || isPark) {
-      // Thiên nhiên: icon nhỏ mờ
-      const fIcon = isForest ? '🌲' : isField ? '🌾' : '🌿';
-      icon = `<span class="wm-terrain-icon">${fIcon}</span>`;
-    } else if (isRoad || isStreet) {
-      // Đường: hoàn toàn không icon — màu nền nói lên tất cả
-      icon = '';
-    } else if (isBuilding) {
-      // Tòa nhà: icon nhỏ rõ hơn
-      icon = `<span class="wm-building-icon">${tdef.icon||'🏠'}</span>`;
+    if (type === 'slash') {
+      _addEffect('slash', sx, sy, { maxLife: 18, len: 28 });
+    } else if (type === 'laser') {
+      _addEffect('laser', sx, sy, { maxLife: 15, tx: tx, ty: ty });
+    } else if (type === 'beam_red') {
+      _addEffect('beam_red', toPx + 8, toPy + 6, {
+        maxLife: 18, tx: fromPx + 8, ty: fromPy + 8,
+      });
     } else {
-      // Các tile còn lại: icon nhỏ mờ
-      icon = `<span class="wm-terrain-icon">${tdef.icon||''}</span>`;
-    }
-
-    // Zombie overlay — dot style
-    if (zCount > 0 && !hasBoss) {
-      const zDisplay = zCount === 1 ? '•' : `•${zCount}`;
-      overlay += `<div class="wm-z">${zDisplay}</div>`;
-    }
-    // AP cost khi adjacent
-    if (isAdj && !isImpass) {
-      const apCost = MOVE_COST?.[ttype] || 1;
-      overlay += `<div class="wm-cell-ap">${apCost}</div>`;
+      _addEffect('bullet', sx, sy, { maxLife: 12, tx: tx, ty: ty });
     }
   }
-  // Explored but not visible — no icon, just terrain color (wm-dim handles opacity)
 
-  const idAttr = isPlayer ? ' id="wm-player-cell"' : '';
-  return `<div class="wm-cell ${fogClass}"${idAttr} ${moveAttr}>${icon}${overlay}</div>`;
-}
+  // Xác định loại projectile dựa vào weapon
+  function _getProjectileType(state) {
+    var wid = state.equip && state.equip.weapon;
+    if (!wid) return 'slash';
+    if (typeof ITEM_DB !== 'undefined' && ITEM_DB[wid]) {
+      var def = ITEM_DB[wid];
+      if (def.tags && def.tags.indexOf('blade') >= 0) return 'slash';
+      if (def.tags && def.tags.indexOf('firearm') >= 0) {
+        // skill cao → laser visual
+        var skillLv = (state.skills && state.skills.firearm) || 0;
+        return skillLv >= 3 ? 'laser' : 'bullet';
+      }
+      if (def.tags && def.tags.indexOf('blunt') >= 0) return 'slash';
+    }
+    return 'slash';
+  }
 
-async function UI_wmMove(dir) {
-  const DIRS = {n:[0,-1],s:[0,1],e:[1,0],w:[-1,0]};
-  const [dx, dy] = DIRS[dir];
-  const r = DW_move(dir);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
+  // ── PUBLIC API ────────────────────────────────────
 
-  UI_renderWorldMap();
-  UI_worldMapCenter();
-  UI_renderSurvivalHUD();
-  UI_renderHeader();
+  // Cập nhật HUD từ state
+  function _updateHUD(state) {
+    var hp   = document.getElementById('dwa-hp');
+    var ap   = document.getElementById('dwa-ap');
+    var ammo = document.getElementById('dwa-ammo');
+    if (hp)   hp.textContent   = (state.hp || 0) + '/' + (state.maxHp || 0);
+    // Hiển thị STAMINA thay AP trong arena (AP vẫn hiển thị nhỏ hơn)
+    var maxStmHud = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state.maxStamina || 10);
+    var curStmHud = state.stamina != null ? state.stamina : maxStmHud;
+    if (ap) ap.textContent = curStmHud + '/' + maxStmHud + ' SB';
 
-  // If approaching a building, show entry popup
-  if (r.approaching || gs._state.approaching) {
-    const target = gs._state.approaching;
-    if (target) {
-      _UI_showEntryPopup(target.targetX, target.targetY);
+    // Đạn
+    var wid  = state.equip && state.equip.weapon;
+    var ammoStr = '∞';
+    if (wid && typeof ITEM_DB !== 'undefined' && ITEM_DB[wid]) {
+      var wdef = ITEM_DB[wid];
+      if (wdef.ammoType && state.ammo) {
+        ammoStr = (state.ammo[wdef.ammoType] || 0) + '';
+      }
+    }
+    if (ammo) ammo.textContent = ammoStr;
+  }
+
+  // Render danh sách enemy cards + chọn target
+  var _selectedEnemyObjId = null;
+
+  function _renderEnemyList(enemies) {
+    var list = document.getElementById('dwa-enemy-list');
+    if (!list) return;
+    list.innerHTML = '';
+
+    for (var i = 0; i < enemies.length; i++) {
+      (function (idx, en) {
+        var typeDef = (typeof OBJECT_DEFS !== 'undefined') ? (OBJECT_DEFS[en.type] || {}) : {};
+        var icon    = en.isBoss ? '☠️' : (typeDef.icon || '🧟');
+        var name    = en.isBoss ? (en.bossName || 'BOSS') : (typeDef.label || en.type);
+        var hp      = en.hp;
+        var maxHp   = en.maxHp;
+        var hpPct   = Math.max(0, Math.round(hp / maxHp * 100));
+
+        var card = document.createElement('div');
+        card.className = 'dwa-enemy-card' +
+          (en.id === _selectedEnemyObjId ? ' selected' : '') +
+          (hp <= 0 ? ' dead' : '');
+        card.innerHTML =
+          '<div class="ec-icon">' + icon + '</div>' +
+          '<div class="ec-name">' + name + '</div>' +
+          '<div class="ec-hp">' + hp + '/' + maxHp + '</div>' +
+          '<div class="ec-hpbar"><div class="ec-hpfill" style="width:' + hpPct + '%"></div></div>';
+
+        if (hp > 0) {
+          var _onSelect = function () {
+            _selectedEnemyObjId = en.id;
+            _renderEnemyList(_arena.enemies);
+            _arena.enemies.forEach(function (e) { e.selected = (e.id === en.id); });
+            _updateButtons();
+          };
+          card.addEventListener('click', _onSelect);
+          // iOS Safari: touchstart để đảm bảo element được nhận diện là tappable
+          card.addEventListener('touchstart', function(e) {
+            e.preventDefault(); // prevent 300ms delay
+            _onSelect();
+          }, { passive: false });
+        }
+        list.appendChild(card);
+      })(i, _arena.enemies[i]);
+    }
+  }
+
+  // Helper: select enemy by id and update UI
+  function _selectEnemy(id) {
+    _selectedEnemyObjId = id;
+    _arena.enemies.forEach(function (e) { e.selected = (e.id === id); });
+    _renderEnemyList(_arena.enemies);
+    _updateButtons();
+  }
+
+  function _updateButtons() {
+    var state  = gs && gs._state;
+    var ap     = state ? (state.ap || 0) : 0;
+    var maxStm = (state && typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : (state?.maxStamina || 10);
+    var stm    = state ? (state.stamina ?? maxStm) : 0;
+    var pressure = state ? (state.threatPressure || 0) : 0;
+
+    // Kiểm tra target hợp lệ
+    var hasTarget = false;
+    if (_selectedEnemyObjId) {
+      for (var i = 0; i < _arena.enemies.length; i++) {
+        var en = _arena.enemies[i];
+        if (en.id === _selectedEnemyObjId && !en.dead && en.hp > 0) {
+          hasTarget = true;
+          break;
+        }
+      }
+      if (!hasTarget) _selectedEnemyObjId = null;
+    }
+
+    var hasLiveEnemy = _arena.enemies.some(function(e) { return !e.dead && e.hp > 0; });
+
+    var btnFight   = document.getElementById('dwa-btn-fight');
+    var btnHeavy   = document.getElementById('dwa-btn-heavy');
+    var btnStealth = document.getElementById('dwa-btn-stealth');
+    var btnRest    = document.getElementById('dwa-btn-rest');
+    var btnFlee    = document.getElementById('dwa-btn-flee');
+    var btnRole    = document.getElementById('dwa-btn-role');
+
+    if (btnFight)   btnFight.disabled   = !hasTarget || stm < 3;
+    if (btnHeavy)   btnHeavy.disabled   = !hasTarget || stm < 4 || ap < 1;
+    if (btnStealth) btnStealth.disabled = !hasTarget || stm < 3;
+    if (btnFlee)    btnFlee.disabled    = ap < 2;
+
+    // Nút Nghỉ: luôn available khi còn enemy (đây là mục đích cốt lõi)
+    // Khi không có enemy → vẫn available để hồi STM an toàn
+    if (btnRest) {
+      btnRest.disabled = false;
+      var restLbl = document.getElementById('dwa-btn-rest-lbl');
+      if (hasLiveEnemy) {
+        if (pressure >= 3) {
+          btnRest.className = 'dwa-btn dwa-btn-rest threat-warning';
+          if (restLbl) restLbl.textContent = '⚠ ' + _arena.enemies.filter(function(e){return !e.dead&&e.hp>0;}).length + ' zombie phản công!';
+        } else {
+          btnRest.className = 'dwa-btn dwa-btn-rest';
+          if (restLbl) restLbl.textContent = 'Zombie phản công';
+        }
+      } else {
+        btnRest.className = 'dwa-btn dwa-btn-rest';
+        if (restLbl) restLbl.textContent = 'Hồi SB an toàn';
+      }
+    }
+
+    // AP label cho fight
+    var fightApLbl = document.getElementById('dwa-btn-fight-ap');
+    if (fightApLbl) fightApLbl.textContent = stm < 3 ? 'Hết SB' : '-3 SB';
+
+    // ── Role Skill Button ──────────────────────────────
+    // Hiện/ẩn và enable/disable dựa theo job + skill unlocked
+    if (btnRole && state) {
+      var skillInfo = _getRoleSkillInfo(state);
+      if (skillInfo) {
+        btnRole.style.display = '';
+        var roleLbl = document.getElementById('dwa-btn-role-label');
+        var roleAp  = document.getElementById('dwa-btn-role-ap');
+        if (roleLbl) roleLbl.textContent = skillInfo.icon + ' ' + skillInfo.label;
+        if (roleAp)  roleAp.textContent  = skillInfo.cost;
+        btnRole.disabled = skillInfo.disabled(state, stm, ap);
+        btnRole.title = skillInfo.desc;
+      } else {
+        btnRole.style.display = 'none';
+      }
+    }
+  }
+
+  // ── Role Skill Info ───────────────────────────────────
+  // Trả về thông tin skill đặc biệt của role trong combat
+  // Chỉ hiện khi skill đã được unlock (level >= 1)
+  function _getRoleSkillInfo(state) {
+    var job = state.job;
+    var sk  = state.skills || {};
+    var get = (typeof DW_getSkillEffect === 'function') ? DW_getSkillEffect : function(){ return 0; };
+
+    if (job === 'nurse') {
+      // Nurse: Sơ cứu chiến trường — dùng bandage ngay trong combat
+      var hasFirstaid = (sk.firstaid || 0) >= 1;
+      var hasBandage  = (state.inventory || []).indexOf('bandage') !== -1
+                     || (state.inventory || []).indexOf('cloth_bandage') !== -1;
+      if (!hasFirstaid) return null;
+      var heal = get(state, 'so_cuu_cap_toc', 'field_ap_reduce') ? 1 : 2;
+      return {
+        icon: '🩹', label: 'SƠ CỨU',
+        cost: '-' + heal + ' ĐHĐ + Băng',
+        desc: 'Dùng băng hồi HP. Cần Băng gạc trong túi.',
+        disabled: function(s, stm, ap) {
+          var inv = s.inventory || [];
+          return ap < heal || (inv.indexOf('bandage') === -1 && inv.indexOf('cloth_bandage') === -1);
+        },
+      };
+    }
+
+    if (job === 'soldier') {
+      // Soldier: Counter-attack nếu unlock
+      var hasCounter = get(state, 'phan_cong_chop_nhoang', 'counter_attack_unlock');
+      if (!hasCounter) return null;
+      var usedCount = state.combatCounterUsed || 0;
+      var maxUses   = get(state, 'phan_cong_chop_nhoang', 'counter_uses_per_combat') || 1;
+      return {
+        icon: '⚡', label: 'PHẢN CÔNG',
+        cost: 'Tự động (+' + Math.round((get(state,'phan_cong_chop_nhoang','counter_damage_bonus')||0.15)*100) + '% DMG)',
+        desc: 'Phản công ngay lập tức sau khi bị đánh. Hồi phục thụ động.',
+        disabled: function(s, stm, ap) { return usedCount >= maxUses || stm < 2; },
+      };
+    }
+
+    if (job === 'police') {
+      // Police: Cảnh báo — làm zombie hoảng loạn (reduce threat pressure)
+      var hasWarning = (sk.mental || 0) >= 1;
+      if (!hasWarning) return null;
+      return {
+        icon: '🚨', label: 'CẢNH BÁO',
+        cost: '-1 ĐHĐ',
+        desc: 'Hét lên cảnh báo — giảm Threat Pressure về 0, zombie hoảng loạn 1 lượt.',
+        disabled: function(s, stm, ap) { return ap < 1 || (s.policeWarnUsed || false); },
+      };
+    }
+
+    if (job === 'mechanic') {
+      // Mechanic: Sửa chữa vũ khí nhanh trong combat
+      var hasMechSkill = (sk.craft || 0) >= 1;
+      if (!hasMechSkill) return null;
+      return {
+        icon: '🔧', label: 'SỬA ĐỒ',
+        cost: '-1 ĐHĐ',
+        desc: 'Sửa vũ khí đang cầm: hồi 5 độ bền. Dùng 1 lần/combat.',
+        disabled: function(s, stm, ap) { return ap < 1 || (s.mechRepairUsed || false); },
+      };
+    }
+
+    if (job === 'driver') {
+      // Driver: Thoát nhanh — giảm AP bỏ chạy
+      var hasEscape = (sk.sneak || 0) >= 1;
+      if (!hasEscape) return null;
+      return {
+        icon: '💨', label: 'BỎ TRỐN',
+        cost: '-1 ĐHĐ',
+        desc: 'Driver chạy nhanh — thoát khỏi combat chỉ tốn 1 ĐHĐ thay vì 2.',
+        disabled: function(s, stm, ap) { return ap < 1; },
+      };
+    }
+
+    return null; // Các role khác: không có skill combat đặc biệt hiện tại
+  }
+
+  // ── Role Skill Action ─────────────────────────────────
+  function _doRoleSkill() {
+    var state = gs && gs._state;
+    if (!state) return;
+    var job = state.job;
+
+    if (job === 'nurse') {
+      // Dùng bandage để hồi HP trong combat
+      var inv = state.inventory ? state.inventory.slice() : [];
+      var bidx = inv.indexOf('bandage');
+      if (bidx === -1) bidx = inv.indexOf('cloth_bandage');
+      if (bidx === -1) { _showLog('🩹 Không có băng gạc!', '#cc4400'); return; }
+      var get2 = (typeof DW_getSkillEffect === 'function') ? DW_getSkillEffect : function(){return 0;};
+      var heal = get2(state, 'so_cuu_cap_toc', 'field_ap_reduce') ? 1 : 2;
+      if (state.ap < heal) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
+      var healAmt = 3 + (get2(state,'so_cuu_cap_toc','field_med_bonus')||0);
+      inv.splice(bidx, 1);
+      var ns = {
+        ...state,
+        ap: state.ap - heal,
+        hp: Math.min(state.maxHp, state.hp + healAmt),
+        inventory: inv,
+      };
+      ns.log = ['🩹 Sơ cứu chiến trường: +' + healAmt + ' HP.', ...(ns.log||[])];
+      gs.setState(ns);
+      _showLog('🩹 Băng bó: +' + healAmt + ' HP!', '#44dd44');
+      _updateHUD();
+      _updateButtons();
+      return;
+    }
+
+    if (job === 'police') {
+      // Cảnh báo: reset threat pressure
+      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
+      if (state.policeWarnUsed) { _showLog('🚨 Đã dùng trong combat này!', '#cc4400'); return; }
+      var ns2 = { ...state, ap: state.ap - 1, threatPressure: 0, policeWarnUsed: true };
+      ns2.log = ['🚨 Cảnh sát hét cảnh báo — zombie hoảng loạn!', ...(ns2.log||[])];
+      gs.setState(ns2);
+      _showLog('🚨 Zombie hoảng loạn! Threat Pressure → 0', '#ffaa44');
+      _updateHUD();
+      _updateButtons();
+      return;
+    }
+
+    if (job === 'mechanic') {
+      // Sửa vũ khí trong combat
+      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
+      if (state.mechRepairUsed) { _showLog('🔧 Đã dùng trong combat này!', '#cc4400'); return; }
+      var wpSlot = state.equip?.weapon;
+      if (!wpSlot) { _showLog('🔧 Không có vũ khí để sửa!', '#cc4400'); return; }
+      var newDur = { ...(state.equipDur || {}) };
+      var itemDef = (typeof ITEM_DB !== 'undefined') ? ITEM_DB[wpSlot] : null;
+      var maxDur = itemDef?.durability || 30;
+      newDur.weapon = Math.min(maxDur, (newDur.weapon ?? maxDur) + 5);
+      var ns3 = { ...state, ap: state.ap - 1, equipDur: newDur, mechRepairUsed: true };
+      ns3.log = ['🔧 Sửa chữa nhanh: vũ khí +5 độ bền.', ...(ns3.log||[])];
+      gs.setState(ns3);
+      _showLog('🔧 Vũ khí +5 độ bền!', '#aaddff');
+      _updateHUD();
+      _updateButtons();
+      return;
+    }
+
+    if (job === 'driver') {
+      // Thoát nhanh với 1 ĐHĐ
+      if (state.ap < 1) { _showLog('Không đủ ĐHĐ!', '#cc4400'); return; }
+      // Override flee cost: pass 1 instead of default 2
+      var rawFlee = (typeof _raw !== 'undefined' && _raw.DW_flee) ? _raw.DW_flee
+                  : (typeof window.DW_fleeRaw === 'function') ? window.DW_fleeRaw : null;
+      if (!rawFlee) { _showLog('⚠ Engine unavailable', '#cc2200'); return; }
+      var exits = (typeof DW_getExits === 'function') ? DW_getExits() : [];
+      var dir = exits[0]?.id || 'n';
+      // Spend 1 AP manually + call flee
+      var preState = { ...state, ap: state.ap + 1 }; // add 1 so flee's -2 = net -1
+      var fr = rawFlee(preState, dir);
+      if (fr.ok) {
+        gs.setState(fr.state);
+        _showLog('💨 Driver thoát nhanh!', '#aaffaa');
+        hide();
+      } else {
+        _showLog(fr.msg || 'Thoát thất bại.', '#cc4400');
+      }
       return;
     }
   }
 
-  // Regular tile — notify
-  if (r.msg) showNotif('🚶 '+r.msg, '');
-  if (gs.player.hp <= 0) setTimeout(()=>UI_gameOver('HP về 0'), 400);
-}
-
-function _UI_showEntryPopup(tx, ty) {
-  const tile  = gs._state.tiles?.[`${tx},${ty}`];
-  const tdef  = TILE_TYPES[tile?.type] || {};
-  const zCount= (tile?.objects||[]).filter(o=>OBJECT_DEFS?.[o?.type]?.type==='enemy'&&o?.alive!==false).length;
-  const hasBoss = (tile?.objects||[]).some(o=>o?.isBoss);
-  const dangerDef = TILE_TYPES[tile?.type]?.danger || 1;
-
-  document.getElementById('entry-icon').textContent = tdef.icon || '🏠';
-  document.getElementById('entry-name').textContent = tile?.name || tdef.name || 'Tòa nhà';
-  document.getElementById('entry-type').textContent = (tdef.name||tile?.type||'BUILDING').toUpperCase();
-  document.getElementById('entry-desc').textContent =
-    tile?.desc || `Bạn đứng trước ${tile?.name||'tòa nhà'}. Bên trong tối và yên tĩnh — không rõ có gì đang chờ.`;
-
-  const statsHtml = [
-    zCount > 0 ? `<span class="entry-stat danger">🧟 ${zCount} zombie</span>` : `<span class="entry-stat safe">✓ Không thấy zombie</span>`,
-    hasBoss     ? `<span class="entry-stat danger">☠ BOSS trong đây!</span>` : '',
-    `<span class="entry-stat neutral">${['','★','★★','★★★','★★★★','☠'][Math.min(5,dangerDef)]} Nguy hiểm ${dangerDef}/5</span>`,
-    tile?.special === 'medical' ? `<span class="entry-stat safe">🏥 Vật tư y tế</span>` : '',
-    tile?.special === 'weapon'  ? `<span class="entry-stat neutral">⚔ Vũ khí</span>` : '',
-    tile?.special === 'food'    ? `<span class="entry-stat safe">🍞 Thức ăn</span>` : '',
-    tile?.special === 'escape'  ? `<span class="entry-stat neutral">🚇 Lối thoát</span>` : '',
-  ].filter(Boolean).join('');
-
-  document.getElementById('entry-stats').innerHTML = statsHtml;
-  document.getElementById('entry-popup-overlay').classList.add('show');
-}
-
-function UI_entryEnter() {
-  document.getElementById('entry-popup-overlay').classList.remove('show');
-  const r = DW_enterApproached();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif('🚪 Vào ' + (gs._state.tiles?.[`${gs._state.x},${gs._state.y}`]?.name||'tòa nhà'), '');
-  // Switch to main tab to show location objects
-  UI_tab('main');
-  UI_renderAll();
-  if (r.firstVisit) aiDescribeNewTile();
-  if (gs.player.hp <= 0) setTimeout(()=>UI_gameOver('HP về 0'), 400);
-}
-
-function UI_entrySkip() {
-  document.getElementById('entry-popup-overlay').classList.remove('show');
-  const r = DW_retreatApproach();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif('↩ Bỏ qua.', '');
-  UI_renderWorldMap();
-}
-
-function UI_worldMapCenter() {
-  const cell = document.getElementById('wm-player-cell');
-  if (cell) cell.scrollIntoView({block:'center',inline:'center',behavior:'smooth'});
-}
-
-// ══════════════════════════════════════════════════════
-// GO HOME SYSTEM
-// ══════════════════════════════════════════════════════
-function UI_showGoHome() {
-  const s = gs._state;
-  const base = s.base;
-  if (!base?.tileKey) return;
-
-  const [bx, by] = base.tileKey.split(',').map(Number);
-  const dist = Math.abs(s.x - bx) + Math.abs(s.y - by);
-  const apCost = Math.max(1, dist); // 1 AP per tile (simplified fast travel)
-  const canAfford = s.ap >= apCost;
-
-  document.getElementById('go-home-title').textContent =
-    s.tiles[base.tileKey]?.name || 'BASE';
-  document.getElementById('go-home-info').textContent =
-    `Khoảng cách: ${dist} tiles — ${TILE_TYPES[s.tiles[base.tileKey]?.type]?.name||''}`;
-  document.getElementById('go-home-ap').textContent = apCost;
-  document.getElementById('go-home-cost').style.color = canAfford ? '' : 'var(--blood-bright)';
-  document.getElementById('go-home-overlay').classList.add('show');
-}
-
-function UI_goHomeConfirm() {
-  const s = gs._state;
-  const base = s.base;
-  if (!base?.tileKey) { UI_goHomeCancel(); return; }
-
-  const [bx, by] = base.tileKey.split(',').map(Number);
-  const dist = Math.abs(s.x - bx) + Math.abs(s.y - by);
-  const apCost = Math.max(1, dist);
-
-  if (s.ap < apCost) {
-    showNotif(`Không đủ ĐHĐ — cần ${apCost}, còn ${s.ap}.`, 'danger');
-    UI_goHomeCancel();
-    return;
-  }
-
-  // Fast travel — teleport to base tile, spend AP + time
-  let ns = {
-    ...s,
-    x: bx, y: by,
-    ap: s.ap - apCost,
-    hour: (s.hour + dist * 0.25) % 24,
-  };
-  // Mark explored
-  if (!ns.exploredTiles.includes(base.tileKey)) {
-    ns.exploredTiles = [...ns.exploredTiles, base.tileKey];
-  }
-  ns.log = [`🏕 Trở về base — đi ${dist} tiles, tốn ${apCost} ĐHĐ.`, ...(ns.log||[])];
-
-  gs.setState(ns);
-  UI_goHomeCancel();
-  UI_renderAll();
-  // Auto-switch to base tab
-  UI_tab('base');
-  showNotif('🏕 Đã về base!', '');
-}
-
-function UI_goHomeCancel() {
-  document.getElementById('go-home-overlay').classList.remove('show');
-}
-
-// ══════════════════════════════════════════════════════
-// BASE TAB RENDER
-// ══════════════════════════════════════════════════════
-var BASE_OVERLAY_MODE = 'off'; // 'off' | 'room' | 'defense'
-
-// BASE_LAYOUT: top-down grid for each level
-// 11x11 grid, center 5x5 is building interior, border is terrain
-// Each cell: {type, icon, zone, lightSrc}
-function _DW_buildBaseLayout(baseData, level, hour) {
-  const isNight = hour >= 20 || hour < 6;
-  const size = 11;
-  // terrain types cycling for outer ring
-  const terrainCycle = ['forest','forest','rock','forest','grass','forest','rock'];
-  // Build cleared terrain map from base.cleared array
-  const cleared = new Set(baseData?.cleared || []);
-  const farms   = baseData?.farms || {};
-
-  // Room zones by level
-  const ROOMS = {
-    1: [], // just floor
-    2: [
-      {cells:[[3,4],[4,4],[5,4]], zone:'bedroom', badge:'BEDROOM'},
-      {cells:[[5,5],[6,5],[5,6],[6,6]], zone:'storage', badge:'KHO'},
-    ],
-    3: [
-      {cells:[[3,4],[4,4]], zone:'bedroom', badge:'BED'},
-      {cells:[[6,4],[7,4]], zone:'workshop', badge:'WORKSHOP'},
-      {cells:[[3,6],[4,6],[5,6]], zone:'kitchen', badge:'BẾP'},
-      {cells:[[6,6],[7,6]], zone:'storage', badge:'KHO'},
-    ],
-    4: [
-      {cells:[[3,3],[4,3],[3,4],[4,4]], zone:'bedroom', badge:'BED'},
-      {cells:[[6,3],[7,3],[6,4],[7,4]], zone:'workshop', badge:'WORK'},
-      {cells:[[3,6],[4,6],[3,7],[4,7]], zone:'kitchen', badge:'BẾP'},
-      {cells:[[6,6],[7,6],[6,7],[7,7]], zone:'storage', badge:'KHO'},
-      {cells:[[5,4],[5,5],[5,6]], zone:'defense', badge:'DEF'},
-    ],
-    5: [
-      {cells:[[3,3],[4,3],[3,4],[4,4]], zone:'bedroom', badge:'BED'},
-      {cells:[[6,3],[7,3],[6,4],[7,4]], zone:'workshop', badge:'WORK'},
-      {cells:[[3,6],[4,6],[3,7],[4,7]], zone:'kitchen', badge:'BẾP'},
-      {cells:[[6,6],[7,6],[6,7],[7,7]], zone:'storage', badge:'KHO'},
-      {cells:[[5,4],[5,5],[5,6],[4,5],[6,5]], zone:'defense', badge:'RADIO'},
-    ],
-  };
-
-  // Interior contents by level
-  const INTERIOR = {
-    1: {5:{5:'🛏',6:'🔥'}},
-    2: {4:{4:'🛏',5:'📦'},5:{4:'🔥',5:'🧰'},6:{5:'📻'}},
-    3: {3:{4:'🛏',5:'📦',6:'🔥'},4:{4:'📻',5:'🍳',6:'🧰'},5:{4:'🧱',5:'🚪',6:'🧱'}},
-    4: {3:{3:'🛏',4:'📦',5:'🔥',6:'🍳'},4:{3:'💡',4:'🧰',5:'🚪',6:'⚒'},
-        5:{3:'🧱',4:'🧱',5:'📻',6:'🧱'},6:{3:'🧱',4:'🧱',5:'🧱',6:'🧱'}},
-    5: {3:{3:'🛏',4:'📦',5:'🔥',6:'🍳',7:'⛽'},
-        4:{3:'💡',4:'🧰',5:'🚪',6:'⚒',7:'💡'},
-        5:{3:'🧱',4:'🧱',5:'📻',6:'🧱',7:'🧱'},
-        6:{3:'🧱',4:'🛡',5:'🧱',6:'🛡',7:'🧱'},
-        7:{3:'🧱',4:'🧱',5:'🚪',6:'🧱',7:'🧱'}},
-  };
-
-  // Light sources positions (col, row)
-  const LIGHT_SRC = {
-    1:[[5,5],[5,6]],
-    2:[[5,4],[5,6]],
-    3:[[3,4],[6,5]],
-    4:[[3,3],[6,4],[5,5]],
-    5:[[3,3],[6,3],[5,5],[3,6],[6,6]],
-  };
-
-  // Build zone map
-  const zoneMap = {};
-  const rooms = ROOMS[Math.min(level,5)] || [];
-  for (const room of rooms) {
-    for (const [c,r] of room.cells) {
-      zoneMap[`${c},${r}`] = room.zone;
+  // Hiển thị log message
+  function _showLog(msg, color) {
+    var logEl = document.getElementById('dwa-log');
+    if (logEl) {
+      logEl.style.color = color || '#a09080';
+      logEl.textContent = msg;
     }
+    _arena.lastMsg = msg;
   }
 
-  // Building bounds by level
-  const bldBound = {
-    1:{r0:4,r1:7,c0:4,c1:6},
-    2:{r0:3,r1:7,c0:3,c1:7},
-    3:{r0:3,r1:7,c0:3,c1:7},
-    4:{r0:3,r1:7,c0:3,c1:7},
-    5:{r0:2,r1:8,c0:2,c1:8},
-  };
-  const bd = bldBound[Math.min(level,5)];
-
-  // Door position
-  const DOOR = {1:[6,5],2:[5,7],3:[5,7],4:[5,7],5:[5,8]};
-  const [doorC, doorR] = DOOR[Math.min(level,5)];
-
-  // Light sources
-  const lightSrcs = new Set((LIGHT_SRC[Math.min(level,5)]||[]).map(([c,r])=>`${c},${r}`));
-
-  // Interior content
-  const interior = INTERIOR[Math.min(level,5)] || {};
-
-  // Radio blink if pending broadcast
-  const hasBroadcast = !!(gs?._state?.pendingBaseEvent);
-
-  // Build grid
-  const grid = [];
-  for (let row = 0; row < size; row++) {
-    for (let col = 0; col < size; col++) {
-      const key = `${col},${row}`;
-      const isBuilding = row >= bd.r0 && row <= bd.r1 && col >= bd.c0 && col <= bd.c1;
-      const isDoor = (col === doorC && row === doorR);
-      const isWallRow = row === bd.r0 || row === bd.r1;
-      const isWallCol = col === bd.c0 || col === bd.c1;
-      const isWall = isBuilding && (isWallRow || isWallCol) && !isDoor;
-      const isFloor = isBuilding && !isWall;
-
-      // Terrain outside
-      const isCleared = cleared.has(key);
-      const farmState = farms[key];
-      const terrainType = terrainCycle[(col * 3 + row * 7) % terrainCycle.length];
-
-      let type, icon, baseClass = 'base-cell';
-      let zone = zoneMap[key] || '';
-      let isLight = lightSrcs.has(key);
-      let clickable = false;
-      let badge = '';
-
-      if (isWall) {
-        type = 'wall'; icon = '🧱'; baseClass += ' bc-wall';
-        if (!isNight || isLight) baseClass += ' bc-lit';
-      } else if (isDoor) {
-        type = 'door'; icon = '🚪'; baseClass += ' bc-door';
-      } else if (isFloor) {
-        // Check interior content
-        icon = interior[col]?.[row] || '';
-        type = 'floor'; baseClass += ' bc-floor';
-        if (isLight) { baseClass += ' bc-lightsrc'; }
-        if (isNight && !isLight) baseClass += ' bc-dim';
-        // Radio blink
-        if (icon === '📻' && hasBroadcast) baseClass += ' bc-radio-blink';
-      } else {
-        // Terrain
-        if (farmState === 'growing') { icon = '🌱'; type = 'farm'; baseClass += ' bc-farm'; }
-        else if (farmState === 'harvest') { icon = '🌾'; type = 'harvest'; baseClass += ' bc-farm'; }
-        else if (isCleared) { icon = '⬜'; type = 'cleared'; baseClass += ' bc-cleared'; clickable = true; }
-        else if (terrainType === 'forest') { icon = '🌲'; type = 'forest'; baseClass += ' bc-forest'; clickable = true; }
-        else if (terrainType === 'rock')   { icon = '🪨'; type = 'rock';   baseClass += ' bc-rock';   clickable = true; }
-        else                               { icon = '🌿'; type = 'grass';  baseClass += ' bc-grass';  clickable = true; }
-        if (isNight) baseClass += ' bc-dark';
-      }
-
-      if (clickable) baseClass += ' bc-clickable';
-
-      grid.push({key, row, col, type, icon, zone, baseClass, isLight, badge, clickable, farmState, isCleared, terrainType, isDoor});
-    }
-  }
-  return {grid, size, rooms, lightSrcs};
-}
-
-function UI_baseToggleOverlay(mode) {
-  BASE_OVERLAY_MODE = mode;
-  document.querySelectorAll('.base-overlay-btn').forEach(b => b.classList.remove('active'));
-  const btnId = mode === 'off' ? 'base-ovr-off' : mode === 'room' ? 'base-ovr-room' : 'base-ovr-defense';
-  const btn = document.getElementById(btnId);
-  if (btn) btn.classList.add('active');
-  UI_renderBaseGrid();
-}
-
-function UI_renderBaseTab() {
-  if (!gs) return;
-  const s = gs._state;
-  const base = s.base;
-  if (!base) return;
-
-  UI_renderBaseHUD(s, base);
-  UI_renderBaseGrid();
-  UI_renderBaseActions(s, base);
-}
-
-function UI_renderBaseHUD(s, base) {
-  const el = document.getElementById('base-hud-bar');
-  if (!el) return;
-  const lvl = base.level || 1;
-  const def = BASE_UPGRADE_DEFS[Math.min(lvl,5)];
-  const bst = DW_getBaseStatus(s);
-  const tokens = s.baseTokens ?? 0;
-  const isNight = s.hour >= 20 || s.hour < 6;
-  const lightIcon = isNight ? '🌙' : '☀';
-  const noiseLabel = (s.noise||0) <= 2 ? 'THẤP' : (s.noise||0) <= 5 ? 'TRUNG' : 'CAO';
-  const noiseCls = (s.noise||0) <= 2 ? 'color:#55C45A' : (s.noise||0) <= 5 ? 'color:#E8B800' : 'color:#C0392B';
-
-  el.innerHTML = `
-    <div class="base-hud-name">${def?.icon||'🏕'} ${s.tiles[base.tileKey]?.name||def?.name||'BASE'}</div>
-    <div class="base-hud-lvl">LV${lvl}</div>
-    <div class="base-hud-divider">|</div>
-    <div class="base-hud-stat"><span class="icon">${lightIcon}</span>
-      <span style="color:#555">NGÀY ${s.day} ${String(s.hour).padStart(2,'0')}:00</span></div>
-    <div class="base-hud-divider">|</div>
-    <div class="base-hud-stat"><span class="icon">🎯</span>
-      <span class="val">${tokens}/${BASE_DAILY_TOKENS}</span>
-      <span style="color:#333;font-size:7px">TOKEN</span></div>
-    <div class="base-hud-stat"><span class="icon">🔊</span>
-      <span style="${noiseCls}">${noiseLabel}</span></div>
-    <div class="base-hud-stat"><span class="icon">📦</span>
-      <span class="val">${(bst?.storageWeight||0).toFixed(1)}/${bst?.storageCap||60}kg</span></div>
-    ${bst?.threat > 0 ? `<div class="base-hud-threat" style="color:${bst.dangerColor}">⚠ ${bst.dangerLabel}</div>` : ''}
-  `;
-}
-
-function UI_renderBaseGrid() {
-  const el = document.getElementById('base-grid');
-  if (!el || !gs) return;
-  const s = gs._state;
-  const base = s.base;
-  if (!base) return;
-
-  const lvl = base.level || 1;
-  const {grid, size} = _DW_buildBaseLayout(base, lvl, s.hour||8);
-
-  el.style.gridTemplateColumns = `repeat(${size}, 36px)`;
-
-  const cells = grid.map(cell => {
-    let cls = cell.baseClass;
-    let extra = '';
-
-    // Zone overlays
-    if (BASE_OVERLAY_MODE === 'room' && cell.zone) {
-      cls += ` bz-${cell.zone}`;
-      extra = `<div class="bc-room-badge" style="color:${
-        cell.zone==='bedroom'?'#4a7ab5':cell.zone==='workshop'?'#b56a20':
-        cell.zone==='kitchen'?'#4ab540':cell.zone==='defense'?'#b53020':'#b5b520'
-      }">${cell.zone.toUpperCase().slice(0,4)}</div>`;
-    }
-    if (BASE_OVERLAY_MODE === 'defense' && (cell.type==='door' || cell.type==='forest'||cell.type==='cleared')) {
-      if (cell.type === 'door') cls += ' bd-entry';
-    }
-
-    const clickAttr = cell.clickable
-      ? `onclick="UI_baseTerrainClick('${cell.key}','${cell.terrainType}','${cell.farmState||''}','${cell.isCleared}')"`
-      : '';
-    const iconHtml = cell.icon ? `<span class="bc-icon">${cell.icon}</span>` : '';
-
-    return `<div class="${cls}" ${clickAttr}>${iconHtml}${extra}</div>`;
-  });
-
-  el.innerHTML = cells.join('');
-}
-
-function UI_renderBaseActions(s, base) {
-  const el = document.getElementById('base-actions-bar');
-  if (!el) return;
-  const lvl = base.level || 1;
-  const tokens = s.baseTokens ?? 0;
-  const isAtBase = s.x === Number(base.tileKey.split(',')[0]) &&
-                   s.y === Number(base.tileKey.split(',')[1]);
-  const canUpgrade = lvl < 5;
-  const p = gs.player;
-
-  const btns = [];
-
-  if (isAtBase) {
-    btns.push(`<button class="base-act-btn primary" onclick="UI_doBaseSleep()">💤 NGỦ</button>`);
-    btns.push(`<button class="base-act-btn" onclick="UI_doBaseRest()" ${p.ap<1?'disabled':''}>😮‍💨 NGHỈ</button>`);
-    if (canUpgrade)
-      btns.push(`<button class="base-act-btn" onclick="UI_doBaseUpgrade()">⬆ NÂNG CẤP LV${lvl+1}</button>`);
-    btns.push(`<button class="base-act-btn" onclick="UI_tab('craft')">⚒ CHẾ TẠO</button>`);
-    if (lvl >= 2)
-      btns.push(`<button class="base-act-btn" onclick="UI_doBaseStorage()">📦 KHO ĐỒ</button>`);
-  } else {
-    btns.push(`<button class="base-act-btn" style="opacity:.4;cursor:default" disabled>📍 Bạn không ở base</button>`);
-    btns.push(`<button class="base-act-btn primary go-home-btn-inline" onclick="UI_showGoHome()">🏕 VỀ BASE</button>`);
-  }
-
-  if (s.pendingBaseEvent) {
-    btns.push(`<button class="base-act-btn danger" onclick="UI_openBaseEvent()">⚠ SỰ KIỆN!</button>`);
-  }
-
-  el.innerHTML = btns.join('');
-}
-
-// Terrain cell click → show farm/clear options
-function UI_baseTerrainClick(key, terrainType, farmState, isCleared) {
-  const s = gs._state;
-  const base = s.base;
-  if (!base) return;
-
-  // Only allow if player is at base
-  const [bx, by] = base.tileKey.split(',').map(Number);
-  if (s.x !== bx || s.y !== by) {
-    showNotif('Cần ở tại base để khai hoang!', 'danger'); return;
-  }
-
-  const cleared = isCleared === 'true';
-  const farm = farmState && farmState !== '';
-
-  if (farm === true || farmState) {
-    // Farm actions
-    _UI_showBaseFarmPopup(key, farmState);
-  } else if (cleared) {
-    // Cleared land — plant
-    _UI_showBaseFarmPopup(key, 'cleared');
-  } else {
-    // Natural terrain — offer to clear
-    _UI_doTerrainClear(key, terrainType);
-  }
-}
-
-// ── BASE EVENT POPUP ──────────────────────────────────
-function UI_openBaseEvent() {
-  const s = gs._state;
-  const ev = s?.pendingBaseEvent;
-  if (!ev) { showNotif('Không có sự kiện đang chờ.', ''); return; }
-
-  const overlay = document.getElementById('popup-overlay');
-  const title   = document.getElementById('popup-title');
-  const body    = document.getElementById('popup-body');
-  if (!overlay) return;
-
-  title.textContent = (ev.icon||'⚠') + ' ' + (ev.title||'SỰ KIỆN');
-  body.innerHTML = `
-    <div style="padding:12px;font-family:'Rajdhani',sans-serif;font-size:14px;color:#ccc;line-height:1.6;border-left:3px solid var(--blood-bright);margin-bottom:12px">
-      ${ev.text||'Sự kiện không xác định.'}
-    </div>
-    <div style="display:flex;flex-direction:column;gap:6px">
-      ${(ev.choices||[]).map((c,i)=>`
-        <button class="ctx-btn ${i===0?'ctx-danger':''}" onclick="UI_resolveBaseEvent(${i})" style="width:100%;text-align:left;padding:8px 12px">
-          <span style="color:var(--amber);margin-right:6px">${c.icon||'▶'}</span>${c.text||c.label||'Lựa chọn '+i}
-        </button>`).join('')}
-    </div>`;
-  overlay.classList.add('show');
-}
-
-function UI_resolveBaseEvent(choiceIdx) {
-  const r = DW_resolveBaseEvent(choiceIdx);
-  document.getElementById('popup-overlay')?.classList.remove('show');
-  if (!r || !r.ok) { showNotif(r?.msg||'Lỗi xử lý sự kiện.', 'danger'); return; }
-  showNotif(r.msg||'Sự kiện đã được xử lý.', 'success');
-  UI_renderAll();
-}
-
-
-function _UI_doTerrainClear(key, type) {
-  const s = gs._state;
-  const p = gs.player;
-  const apCost = type === 'rock' ? 3 : 2;
-  if (p.ap < apCost) { showNotif(`Khai hoang cần ${apCost} ĐHĐ.`, 'danger'); return; }
-
-  const confirmed = confirm(`Khai hoang ${type === 'rock' ? '🪨 Đá' : type === 'forest' ? '🌲 Cây' : '🌿 Cỏ'}? Tốn ${apCost} ĐHĐ.`);
-  if (!confirmed) return;
-
-  const ns = {
-    ...s,
-    ap: s.ap - apCost,
-    base: {
-      ...s.base,
-      cleared: [...(s.base.cleared||[]), key],
-    },
-    log: [`⛏ Khai hoang xong ô ${key}.`, ...(s.log||[])],
-  };
-  gs.setState(ns);
-  UI_renderBaseTab();
-  showNotif('⛏ Khai hoang xong!', '');
-}
-
-function _UI_showBaseFarmPopup(key, farmState) {
-  // Simple action prompt
-  const isFarm = farmState && farmState !== 'cleared';
-  const action = isFarm ? (farmState === 'harvest' ? 'harvest' : 'water') : 'plant';
-
-  if (action === 'harvest' || farmState === 'harvest') {
-    const s = gs._state;
-    const ns = {
-      ...s,
-      inventory: [...s.inventory, 'vegetable'],
-      base: { ...s.base, farms: { ...(s.base.farms||{}), [key]: null } },
-      log: [`🌾 Thu hoạch rau củ tại ${key}.`, ...(s.log||[])],
-    };
-    gs.setState(ns);
-    UI_renderBaseTab();
-    showNotif('🌾 Thu hoạch!', '');
-    return;
-  }
-
-  const confirmMsg = action === 'plant'
-    ? 'Trồng rau? (Sẽ sẵn sàng thu hoạch sau 3 ngày)'
-    : 'Tưới nước? (Rút ngắn thu hoạch)';
-
-  if (confirm(confirmMsg)) {
-    const s = gs._state;
-    const ns = {
-      ...s,
-      base: { ...s.base, farms: { ...(s.base.farms||{}), [key]: 'growing' } },
-      log: [`🌱 Đã trồng tại ${key}.`, ...(s.log||[])],
-    };
-    gs.setState(ns);
-    UI_renderBaseTab();
-    showNotif('🌱 Đã trồng!', '');
-  }
-}
-
-function UI_doBaseSleep() {
-  const r = DW_sleep();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  UI_checkRadioTick && UI_checkRadioTick(gs._state.day - 1, gs._state.day);
-  UI_renderAll();
-  showNotif(r.msg, '');
-}
-
-function UI_doBaseRest() {
-  const r = DW_rest();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  UI_renderAll();
-  showNotif(r.msg, '');
-}
-
-function UI_doBaseUpgrade() {
-  const r = DW_upgradeBase();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  UI_renderAll();
-  showNotif(`⬆ ${r.msg}`, '');
-}
-
-function UI_doBaseStorage() {
-  // Switch to log/craft tab — storage popup TBD
-  UI_tab('craft');
-  showNotif('📦 Kho đồ — dùng tab Chế tạo để quản lý.', '');
-}
-
-// Add "Go Home" button to ctx-actions bar if player has base
-var _ctxGoHomeInjected = false;
-function UI_injectGoHomeToCtx() {
-  const bar = document.getElementById('ctx-actions-bar');
-  if (!bar || !gs?._state?.base) return;
-  const already = document.getElementById('ctx-go-home-btn');
-  if (already) return;
-  const btn = document.createElement('button');
-  btn.id = 'ctx-go-home-btn';
-  btn.className = 'go-home-btn-inline';
-  btn.onclick = UI_showGoHome;
-  btn.innerHTML = '🏕 VỀ BASE';
-  bar.appendChild(btn);
-}
-
-
-// ── TAB NAVIGATION ────────────────────────────────────
-function UI_tab(name) {
-  // Guard: base tab needs a base
-  if (name === 'base' && !gs?._state?.base) return;
-  // Reset equipment selection khi rời tab equip
-  if (typeof _equipSelectedIdx !== 'undefined' && activeTab === 'equip' && name !== 'equip') {
-    _equipSelectedIdx = -1;
-  }
-
-  activeTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab===name));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id==='tab-'+name));
-
-  if (name === 'log')   UI_renderLog();
-  if (name === 'equip') UI_renderEquipment();
-  if (name === 'craft') UI_renderCraft();
-  if (name === 'map')   { UI_renderWorldMap(); setTimeout(UI_worldMapCenter, 50); }
-  if (name === 'base')  UI_renderBaseTab();
-  if (name === 'skill') UI_renderSkillTree();
-}
-
-// Show/hide base tab button based on whether player has a base
-function UI_updateBaseTabBtn() {
-  const btn = document.getElementById('tab-btn-base');
-  if (!btn) return;
-  const hasBase = !!(gs?._state?.base);
-  btn.style.display = hasBase ? '' : 'none';
-}
-
-// Override old tab function
-
-
-// ── LOG SUB-TAB ───────────────────────────────────────
-let activeLogSubTab = 'daily';
-function UI_logSubTab(name) {
-  activeLogSubTab = name;
-  document.querySelectorAll('.log-subtab-btn').forEach(b =>
-    b.classList.toggle('active', b.id === 'lsubtab-'+name));
-  document.querySelectorAll('.log-subpanel').forEach(p =>
-    p.classList.toggle('active', p.id === 'log-panel-'+name));
-  if (name === 'daily') UI_renderLog();
-  if (name === 'story') UI_renderStoryLog();
-}
-
-// ── FULL RE-RENDER ────────────────────────────────────
-let _lastPendingEvent = null;
-function UI_renderAll() {
-  if (!gs) return;
-  UI_renderHeader();
-  UI_renderGameWorld();
-  UI_renderTilePanel();
-  UI_renderStatusPanel();
-  UI_renderMiniMapPanel();
-  UI_renderContextActions();
-  UI_updateBaseTabBtn();
-  if (activeTab==='map')   UI_renderWorldMap();
-  if (activeTab==='base')  UI_renderBaseTab();
-  if (activeTab==='log')   UI_renderLog();
-  if (activeTab==='equip') UI_renderEquipment();
-  if (activeTab==='craft') UI_renderCraft();
-  // Auto-notify when new base event appears
-  const ev = gs._state?.pendingBaseEvent;
-  if (ev && ev !== _lastPendingEvent) {
-    _lastPendingEvent = ev;
-    showNotif(`⚠ SỰ KIỆN BASE: ${ev.title||'Cần xử lý ngay!'}`, 'danger');
-  } else if (!ev) {
-    _lastPendingEvent = null;
-  }
-}
-
-// ── GAME WORLD GRID ───────────────────────────────────
-function _cellDir(dx, dy) {
-  if (dx===0 && dy===-1) return 'n';
-  if (dx===0 && dy===1)  return 's';
-  if (dx===1 && dy===0)  return 'e';
-  if (dx===-1 && dy===0) return 'w';
-  return null;
-}
-
-function UI_renderGameWorld() {
-  const grid = document.getElementById('gw-grid');
-  if (!grid) return;
-  const vp   = DW_getMapViewport(3, 3);
-  const exits = DW_getExits();
-  const exitMap = {};
-  exits.forEach(e => exitMap[`${e.nx},${e.ny}`] = e);
-  const arrows = {n:'↑', s:'↓', e:'→', w:'←'};
-
-  grid.innerHTML = vp.map(row => row.map(cell => {
-    // Player center cell
-    if (cell.isPlayer) {
-      const tdef   = TILE_TYPES[cell.tile?.type] || {};
-      const zCount = cell.tile?.zombies || 0;
-      const raw    = gs._state?.tiles?.[`${cell.wx},${cell.wy}`];
-      const hasNPC = (raw?.objects||[]).some(o=>o?.type==='npc');
-      const hasBox = (raw?.objects||[]).some(o=>o?.type==='container'&&!o?.looted);
-      const hasBoss= (raw?.objects||[]).some(o=>o?.isBoss);
-      return `<div class="gw-cell gw-player">
-        <div style="position:absolute;font-size:22px;opacity:.18;pointer-events:none">${tdef.icon||'📍'}</div>
-        <div style="position:relative;font-size:22px;line-height:1;z-index:1">🧍</div>
-        ${zCount?`<div class="gw-overlay"><span class="gw-z-badge">🧟${zCount}</span></div>`:''}
-        ${hasBoss?`<div style="position:absolute;top:1px;left:2px;font-size:8px;animation:pulse .6s infinite">☠</div>`:''}
-        ${hasNPC?`<div style="position:absolute;bottom:2px;left:2px;font-size:9px">💬</div>`:''}
-        ${hasBox?`<div style="position:absolute;bottom:2px;right:2px;font-size:9px">📦</div>`:''}
-      </div>`;
-    }
-
-    if (!cell.inBounds) {
-      return `<div class="gw-cell gw-outbounds"></div>`;
-    }
-
-    const tdef      = TILE_TYPES[cell.tile?.type] || {};
-    const zCount    = cell.tile?.zombies || 0;
-    const isAdj     = Math.abs(cell.dx) + Math.abs(cell.dy) === 1;
-    const dir       = isAdj ? _cellDir(cell.dx, cell.dy) : null;
-    const exitInfo  = dir ? exitMap[`${cell.wx},${cell.wy}`] : null;
-    const cantAff   = exitInfo && !exitInfo.canAfford;
-    const danger    = zCount > 0;
-
-    if (!cell.explored) {
-      const cls = isAdj
-        ? `gw-cell gw-moveable gw-unexplored${cantAff?' gw-cant':''}`
-        : 'gw-cell gw-unexplored';
-      return `<div class="${cls}"${dir?` onclick="UI_doMove('${dir}')"`:''}>${isAdj?`<div class="gw-dir-arrow">${arrows[dir]}</div>`:''}<div class="gw-fog"></div></div>`;
-    }
-
-    const cls = isAdj
-      ? `gw-cell gw-moveable${danger?' gw-danger':''}${cantAff?' gw-cant':''}`
-      : `gw-cell${danger?' gw-danger':''}`;
-    const raw     = gs._state?.tiles?.[`${cell.wx},${cell.wy}`];
-    const hasBoss = cell.hasBoss || (raw?.objects||[]).some(o=>o?.isBoss);
-
-    return `<div class="${cls}"${dir?` onclick="UI_doMove('${dir}')" title="${cell.tile?.name||''} (${exitInfo?.cost||'?'}ĐHĐ)"`:''}  >
-      <div class="gw-tile-icon">${tdef.icon||'🏚'}</div>
-      ${zCount?`<div class="gw-overlay"><span class="gw-z-badge">${zCount>3?'🧟+':zCount===1?'🧟':'🧟'}${zCount}</span></div>`:''}
-      ${hasBoss?`<div style="position:absolute;top:1px;left:2px;font-size:8px;animation:pulse .6s infinite;color:var(--blood-bright)">☠</div>`:''}
-      ${dir?`<div class="gw-dir-arrow">${arrows[dir]}</div>`:''}
-    </div>`;
-  }).join('')).join('');
-  if (typeof _UI_updateTileStrip === 'function') _UI_updateTileStrip();
-}
-
-// ── STATUS PANEL (replaces old survival HUD + minimap) ────────────────
-function UI_renderSurvivalHUD() { UI_renderStatusPanel(); }
-function UI_renderMiniMapPanel() {
-  const grid = document.getElementById('mmp-grid');
-  if (!grid) return;
-  const vp = DW_getMapViewport(7, 7);
-  grid.innerHTML = vp.map(row => row.map(cell => {
-    if (cell.isPlayer) return `<div class="mmp-cell mmp-player">•</div>`;
-    if (!cell.inBounds || !cell.explored) return `<div class="mmp-cell mmp-unexplored"></div>`;
-    const tdef = TILE_TYPES[cell.tile?.type] || {};
-    const hasBoss = cell.hasBoss;
-    const z = cell.tile?.zombies > 0;
-    return `<div class="mmp-cell mmp-explored${hasBoss?' mmp-boss':''}" style="${z&&!hasBoss?'color:var(--blood-bright)':''}">${hasBoss?'☠':z?'·':(tdef.icon||'·')}</div>`;
-  }).join('')).join('');
-}
-
-function _UI_updateTileStrip() {
-  const tile   = DW_currentTile();
-  const s      = gs._state;
-  if (!tile) return;
-  const tdef   = TILE_TYPES[tile.type] || {};
-  const zCount = tile.zombies || 0;
-  const raw    = s?.tiles?.[`${s.x},${s.y}`];
-  const hasBoss    = (raw?.objects||[]).some(o=>o?.isBoss);
-  const barricade  = raw?.barricade || 0;
-  const noise      = s?.noise || 0;
-  const hasRumor   = !!(s?.activeRumor && s.activeRumor.targetX === s.x && s.activeRumor.targetY === s.y);
-  const nameEl = document.getElementById('zts-name');
-  const iconEl = document.getElementById('zts-icon');
-  const typeEl = document.getElementById('zts-type');
-  const thrEl  = document.getElementById('zts-threat');
-  const metaExtraEl = document.getElementById('zts-meta-extra');
-  if (!nameEl) return;
-  nameEl.textContent = tile.name || tdef.name || '—';
-  iconEl.textContent = tdef.icon || '🏚';
-  // type line: barricade + noise badges
-  let typeHtml = `<span style="color:#2a2a2a">${(tdef.name||tile.type||'—').toUpperCase()}</span>`;
-  if (barricade > 0) typeHtml += ` <span class="zts-mini-badge bari">🧱×${barricade}</span>`;
-  if (noise >= 4)    typeHtml += ` <span class="zts-mini-badge noise-hi">🔊${noise}</span>`;
-  else if (noise>0)  typeHtml += ` <span class="zts-mini-badge noise-lo">🔊${noise}</span>`;
-  if (hasRumor)      typeHtml += ` <span class="zts-mini-badge rumor">📍TIN ĐỒN</span>`;
-  const typeContainer = document.getElementById('zts-type-wrap');
-  if (typeContainer) typeContainer.innerHTML = typeHtml;
-  else { const t=document.getElementById('zts-type'); if(t) t.textContent=(tdef.name||tile.type||'—').toUpperCase(); }
-  if (hasBoss)         { thrEl.textContent='☠ BOSS!';      thrEl.className='zts-threat high'; }
-  else if (zCount > 2) { thrEl.textContent=`🧟 ${zCount}`; thrEl.className='zts-threat high'; }
-  else if (zCount > 0) { thrEl.textContent=`⚠ ${zCount}Z`; thrEl.className='zts-threat low';  }
-  else                 { thrEl.textContent='✓ SẠCH';        thrEl.className='zts-threat none'; }
-}
-
-function UI_renderStatusPanel() {
-  if (!gs) return;
-  const p = gs.player;
-  const s = gs._state;
-  // Vitals
-  const vitEl = document.getElementById('sr-vitals');
-  if (vitEl) {
-    const r=(icon,cls,pct,val)=>
-      `<div class="svr-row"><span class="svr-icon">${icon}</span>`+
-      `<div class="svr-bar"><div class="svr-fill ${cls}" style="width:${Math.min(100,pct)}%"></div></div>`+
-      `<span class="svr-val ${cls}">${val}</span></div>`;
-    const hc=p.hp>p.maxHp*.6?'ok':p.hp>p.maxHp*.3?'warn':'crit';
-    const nc=p.hunger>5?'ok':p.hunger>2?'warn':'crit';
-    const tc=p.thirst>4?'ok':p.thirst>2?'warn':'crit';
-    const sc=(p.stress||0)<35?'ok':(p.stress||0)<65?'warn':'crit';
-    vitEl.innerHTML=
-      r('❤️',hc,(p.hp/(p.maxHp||10)*100).toFixed(0),Math.round(p.hp))+
-      r('🍞',nc,(p.hunger/10*100).toFixed(0),p.hunger.toFixed(1))+
-      r('💧',tc,(p.thirst/10*100).toFixed(0),p.thirst.toFixed(1))+
-      r('😰',sc,Math.min(100,p.stress||0).toFixed(0),Math.round(p.stress||0));
-  }
-  // AP
-  const apNumEl=document.getElementById('sr-ap-num');
-  const apDotsEl=document.getElementById('sr-ap-dots');
-  if (apNumEl) apNumEl.textContent=`${p.ap}/${p.maxAp}`;
-  if (apDotsEl) {
-    const m=Math.min(16,p.maxAp),f=Math.min(m,p.ap);
-    apDotsEl.innerHTML=Array.from({length:m},(_,i)=>`<div class="ap-dot${i>=f?' empty':''}"></div>`).join('');
-  }
-  // ── THREATS + NOISE + PANIC + BASE EVENT ─────────────
-  const thrEl=document.getElementById('sr-threats');
-  if (thrEl) {
-    const tile=DW_currentTile();
-    const raw=s?.tiles?.[`${s.x},${s.y}`];
-    const zc=tile?.zombies||0;
-    const boss=(raw?.objects||[]).some(o=>o?.isBoss);
-    const noise=s?.noise||0;
-    const tileLvl=raw?.noiseLvl||0;
-    const effectiveNoise=Math.max(noise,tileLvl);
-    const panicMode=s?.panicMode||false;
-    const hasPending=!!(s?.pendingBaseEvent);
-    const activeRumor=s?.activeRumor;
-    let rows='';
-
-    // BASE EVENT BANNER — most urgent
-    if (hasPending) {
-      const ev=s.pendingBaseEvent;
-      rows+=`<div class="srt-row danger srt-event-banner" onclick="UI_tab('base');setTimeout(()=>UI_openBaseEvent(),100)" style="cursor:pointer;border-left:3px solid var(--blood-bright);padding-left:6px">
-        <span>⚠ ${ev?.title||'SỰ KIỆN BASE'}</span>
-        <span class="srt-badge boss" style="animation:pulse .7s infinite">!</span>
-      </div>`;
-    }
-
-    // PANIC MODE
-    if (panicMode) {
-      rows+=`<div class="srt-row danger" style="animation:pulse .6s infinite;border-left:3px solid #C0392B">
-        <span>😱 PANIC MODE</span><span class="srt-badge boss">STRESS CAO</span>
-      </div>`;
-    }
-
-    // BOSS
-    if (boss) rows+=`<div class="srt-row danger"><span>☠ BOSS</span><span class="srt-badge boss">NGUY HIỂM</span></div>`;
-
-    // ZOMBIE COUNT
-    if (zc>0) {
-      const hasHorde=(raw?.objects||[]).some(o=>o?.type==='enemy'&&o.alive&&o.isHorde);
-      const hordeTxt=hasHorde?` 🧟 Bầy`:'';
-      rows+=`<div class="srt-row ${zc>2?'danger':'near'}"><span>🧟${hordeTxt}</span><span>${zc} zombie</span></div>`;
-    }
-
-    // NOISE METER — full visual bar
-    if (effectiveNoise>0) {
-      const noiseW=Math.min(100,effectiveNoise/10*100);
-      const noiseCls=effectiveNoise<=3?'ok':effectiveNoise<=6?'warn':'crit';
-      const noiseLabel=effectiveNoise<=2?'THẤP':effectiveNoise<=5?'TRUNG BÌNH':effectiveNoise<=8?'CAO':'NGUY HIỂM';
-      const zombieThreat=effectiveNoise>=5?`<span style="color:var(--blood-bright);font-size:8px">⚡ Zombie sắp kéo đến!</span>`:'';
-      rows+=`<div class="srt-noise-block">
-        <div class="srt-noise-hdr"><span>🔊 TIẾNG ỒN</span><span class="srt-val ${noiseCls}">${noiseLabel}</span></div>
-        <div class="srt-noise-track"><div class="srt-noise-fill ${noiseCls}" style="width:${noiseW}%"></div></div>
-        ${zombieThreat}
-      </div>`;
-    }
-
-    // ACTIVE RUMOR TARGET NEARBY
-    if (activeRumor && !activeRumor.resolved) {
-      const dx=Math.abs((activeRumor.targetX||0)-(s.x||0));
-      const dy=Math.abs((activeRumor.targetY||0)-(s.y||0));
-      const dist=dx+dy;
-      if (dist<=5) {
-        rows+=`<div class="srt-row near" style="border-left:2px solid var(--amber)">
-          <span>📍 ${activeRumor.baitIcon||'?'} Mục tiêu</span>
-          <span style="color:var(--amber)">${dist===0?'ĐÂY RỒI!':dist<=2?'Rất gần':'~'+dist+'tiles'}</span>
-        </div>`;
+  // Xử lý tấn công — gọi engine, lấy kết quả, play animation
+  function _doAttack(mode) {
+    var state = gs && gs._state;
+    if (!state || !_selectedEnemyObjId) return;
+    if (_arena.phase !== 'idle') return;
+
+    _arena.phase = 'player_attack';
+
+    // Tìm enemy trong arena để lấy vị trí pixel
+    var targetArena = null;
+    for (var i = 0; i < _arena.enemies.length; i++) {
+      if (_arena.enemies[i].id === _selectedEnemyObjId) {
+        targetArena = _arena.enemies[i];
+        break;
       }
     }
 
-    if (!rows) rows=`<div class="srt-row clear"><span>Khu vực</span><span style="color:#1a1a1a">SẠCH</span></div>`;
-    thrEl.innerHTML=rows;
-  }
-  // Stats
-  const dayEl=document.getElementById('sri-day');
-  const kEl=document.getElementById('sri-kills');
-  const tEl=document.getElementById('sri-tiles');
-  if (dayEl) dayEl.textContent=gs.time?.day||1;
-  if (kEl)   kEl.textContent=gs.stats?.kills||0;
-  if (tEl)   tEl.textContent=gs.stats?.tilesExplored||0;
-  // Ensure ap-regen-timer-hud exists (guard: document.body may be null during early render)
-  if (!document.getElementById('ap-regen-timer-hud') && document.body) {
-    const t=document.createElement('div');
-    t.id='ap-regen-timer-hud';t.style.display='none';
-    document.body.appendChild(t);
-  }
-}
-
-// ── CONTEXT ACTIONS BAR ───────────────────────────────
-function UI_renderContextActions() {
-  const bar = document.getElementById('ctx-actions-bar');
-  if (!bar) return;
-  const tile = DW_currentTile();
-  if (!tile) return;
-  const p    = gs.player;
-  const s    = gs._state;
-  const btns = [];
-
-  // AP recovery preview
-  const maxAp   = p.maxAp || 40;
-  const restGain = Math.max(1, Math.floor(maxAp * 0.20));
-  // hasEnemy: phải dùng OBJECT_DEFS để resolve category vì obj.type là KEY ('zombie'), không phải 'enemy'
-  const _OD = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
-  const hasEnemy = (tile.objects||[]).some(o => {
-    const cat = (_OD[o?.type]?.type) || o?.type;
-    return cat === 'enemy' && o.alive !== false;
-  });
-  const restCount = s?.restCount || 0;
-
-  (tile.objects || []).forEach((obj, idx) => {
-    if (!obj) return;
-    // Resolve category từ OBJECT_DEFS: obj.type là KEY ('zombie','firstaid_kit'...)
-    // def.type là CATEGORY ('enemy','usable','material','container','special','npc')
-    const _def  = _OD[obj.type] || {};
-    const objCat = _def.type || obj.type || 'container';
-
-    if (objCat === 'enemy' && obj.alive !== false) {
-      const cost = _def.fightAp || obj.fightAp || 3;
-      const canAfford = p.ap >= cost;
-      if (obj.isBoss) {
-        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>☠ BOSS [-${cost}ĐHĐ]</button>`);
-      } else {
-        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>⚔ Tấn công [-${cost}ĐHĐ]</button>`);
-      }
-    } else if (objCat === 'enemy' && obj.alive === false) {
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})">💀 Lục xác zombie</button>`);
-    } else if (objCat === 'container' && !obj.searched) {
-      const cost = _def.searchAp || obj.searchAp || 1;
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>🔍 Lục soát [-${cost}ĐHĐ]</button>`);
-    } else if (objCat === 'container' && obj.searched) {
-      btns.push(`<button class="ctx-btn" disabled style="opacity:.4">🔓 Đã lục soát</button>`);
-    } else if ((objCat === 'usable' || objCat === 'material') && !obj.used) {
-      const cost = _def.ap || obj.ap || 1;
-      const icon = objCat === 'usable' ? '💊' : '🧱';
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>${icon} ${_def.label || obj.label || obj.type} [-${cost}ĐHĐ]</button>`);
-    } else if (objCat === 'npc') {
-      btns.push(`<button class="ctx-btn" onclick="UI_execNPC(${idx})">💬 Nói chuyện</button>`);
-    } else if (objCat === 'special' && !obj.used) {
-      btns.push(`<button class="ctx-btn" onclick="UI_openObjectPopup(${idx})">🔧 ${_def.label || 'Tương tác'}</button>`);
-    }
-  });
-
-  // Rest — show AP gain + limit + threat warning nếu có zombie
-  const restLeft = Math.max(0, 2 - restCount);
-  let restLabel;
-  if (restLeft <= 0) {
-    restLabel = `🛌 Nghỉ [Đã đủ]`;
-  } else if (hasEnemy) {
-    const zombieCount = (tile.objects||[]).filter(o => o?.type==='enemy' && o.alive !== false).length;
-    restLabel = `😮‍💨 Nghỉ [⚠ ${zombieCount} zombie phản công! Hồi SB]`;
-  } else {
-    restLabel = `🛌 Nghỉ [+${restGain}ĐHĐ · SB đầy · còn ${restLeft}]`;
-  }
-  // hasEnemy: KHÔNG disable nữa — Threat Round cho phép nghỉ kể cả có zombie
-  btns.push(`<button class="ctx-btn ${hasEnemy ? 'ctx-danger' : ''}" onclick="UI_doRest()" ${(p.ap<1||restLeft<=0)?'disabled':''}>${restLabel}</button>`);
-  btns.push(`<button class="ctx-btn" onclick="UI_doSleep()" ${hasEnemy?'disabled':''}>💤 Ngủ [Ngày mới]</button>`);
-  btns.push(`<button class="ctx-btn" onclick="UI_doBarricade()" ${p.ap<2?'disabled':''}>🧱 Barricade [-2ĐHĐ]</button>`);
-
-  // Base buttons
-  const hasBase = !!(s?.base?.tileKey);
-  const atBase  = hasBase && s.x === Number(s.base.tileKey.split(',')[0]) &&
-                             s.y === Number(s.base.tileKey.split(',')[1]);
-  if (hasBase && !atBase) {
-    btns.push(`<button class="go-home-btn-inline" onclick="UI_showGoHome()">🏕 VỀ BASE</button>`);
-  }
-  if (hasBase && atBase) {
-    btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_tab('base')">🏕 XEM BASE</button>`);
-  }
-
-  bar.innerHTML = `<span class="ctx-lbl">// HÀNH ĐỘNG</span>` + btns.join('');
-}
-
-function UI_updateActionButtons() {
-  UI_renderContextActions(); // replaces old button update
-}
-
-// ── HEADER ────────────────────────────────────────────
-function UI_renderHeader() {
-  const p    = gs.player;
-  const tile = DW_currentTile();
-  const apPct = (p.ap / (p.maxAp || DW_apMax?.(p) || 40) * 100).toFixed(1);
-  const vs = (typeof DW_getViewState === 'function') ? DW_getViewState() : null;
-
-  // HP
-  const hpEl = document.getElementById('h-hp');
-  document.getElementById('hv-hp').textContent = p.hp.toFixed(1);
-  hpEl.className = 'hstat ' + (p.hp > p.maxHp*.6?'ok':p.hp>p.maxHp*.3?'warn':'crit');
-
-  // AP bar
-  document.getElementById('hv-ap').textContent = p.ap+'/'+p.maxAp;
-  document.getElementById('hb-ap').style.width = apPct+'%';
-
-  // STAMINA bar (⚔ SB)
-  const maxStm = p.maxStamina || (typeof DW_staminaMax === 'function' ? DW_staminaMax(p) : 10);
-  const curStm = p.stamina ?? maxStm;
-  const stmPct = (curStm / maxStm * 100).toFixed(1);
-  const stmEl  = document.getElementById('hv-stm');
-  const stmBar = document.getElementById('hb-stm');
-  if (stmEl) stmEl.textContent = curStm+'/'+maxStm;
-  if (stmBar) stmBar.style.width = stmPct+'%';
-
-  // XP / Level bar
-  const xpLvEl  = document.getElementById('hv-xp-lv');
-  const xpPtsEl = document.getElementById('hv-xp-pts');
-  const xpBarEl = document.getElementById('hb-xp');
-  if (xpLvEl && xpPtsEl && xpBarEl) {
-    const curLv   = p.charLevel || 1;
-    const curXp   = p.charXp    || 0;
-    const xpNow   = (typeof DW_xpForLevel === 'function') ? DW_xpForLevel(curLv)     : 0;
-    const xpNext  = (typeof DW_xpForLevel === 'function') ? DW_xpForLevel(curLv + 1) : 999;
-    const xpInLv  = curXp - xpNow;
-    const xpNeeded = xpNext - xpNow;
-    const xpPct   = xpNeeded > 0 ? Math.min(100, (xpInLv / xpNeeded * 100)).toFixed(1) : 100;
-    const sp      = p.skillPoints || 0;
-    xpLvEl.textContent  = `Lv${curLv}`;
-    xpPtsEl.textContent = sp > 0
-      ? `${xpInLv}/${xpNeeded} XP · ⬆ ${sp}SP`
-      : `${xpInLv}/${xpNeeded} XP`;
-    if (sp > 0) xpPtsEl.style.color = '#ffdd44'; else xpPtsEl.style.color = '';
-    xpBarEl.style.width = xpPct + '%';
-  }
-
-  // Hunger — value + bar fill
-  const hunCls = p.hunger>5?'ok':p.hunger>2?'warn':'crit';
-  const hunPct = (p.hunger / 10 * 100).toFixed(0);
-  document.getElementById('h-hunger').className = 'hstat-need ' + hunCls;
-  document.getElementById('hv-hunger').textContent = p.hunger.toFixed(1);
-  const hbHun = document.getElementById('hb-hunger');
-  if (hbHun) { hbHun.style.width = hunPct+'%'; hbHun.className = 'need-fill '+hunCls; }
-
-  // Thirst — value + bar fill
-  const thiCls = p.thirst>4?'ok':p.thirst>2?'warn':'crit';
-  const thiPct = (p.thirst / 10 * 100).toFixed(0);
-  document.getElementById('h-thirst').className = 'hstat-need ' + thiCls;
-  document.getElementById('hv-thirst').textContent = p.thirst.toFixed(1);
-  const hbThi = document.getElementById('hb-thirst');
-  if (hbThi) { hbThi.style.width = thiPct+'%'; hbThi.className = 'need-fill '+thiCls; }
-
-  // Time — split into day label and clock
-  const _t  = gs.time;
-  const hh  = String(_t.hour).padStart(2,'0');
-  const mm  = String(_t.minute || 0).padStart(2,'0');
-  const dayEl = document.getElementById('hv-day');
-  const clockEl = document.getElementById('hv-clock');
-  if (dayEl)   dayEl.textContent  = `NGÀY ${_t.day}`;
-  if (clockEl) clockEl.textContent = `${hh}:${mm}`;
-
-  // Light label — từ DW_getViewState hoặc fallback gs.time
-  const lightEl = document.getElementById('hv-light');
-  if (lightEl) lightEl.textContent = vs?.time?.lightLabel || _t.lightLabel || '';
-
-  // Location
-  document.getElementById('hv-loc').textContent = tile?.name || '—';
-  const locTypeEl = document.getElementById('hv-loctype');
-  if (locTypeEl) locTypeEl.textContent = tile?.type ? (TILE_TYPES[tile.type]?.name || tile.type) : '';
-
-  // Status effects strip
-  const strip = document.getElementById('status-strip');
-  if (strip) {
-    const st = gs._state || {};                     // FIX: named 'st' to avoid collision
-    const effects = p.statusEffects || [];
-    if (effects.length === 0) {
-      strip.innerHTML = '<span style="font-family:var(--mono);font-size:10px;color:#2a2a2a;padding:2px 6px">Không có hiệu ứng</span>';
-    } else {
-      strip.innerHTML = effects.map(eff => {        // FIX: renamed loop var 's' → 'eff'
-        const def = STATUS_DEFS[eff.type] || { icon:'?', name:eff.type, color:'#555' };
-        return `<span class="status-badge" style="background:${def.color}22;color:${def.color};border:1px solid ${def.color}44">
-          ${def.icon} ${def.name} (${eff.turnsLeft} AP)
-        </span>`;
-      }).join('');
-    }
-    // PANIC MODE chip
-    if (st.panicMode) {
-      strip.innerHTML += `<span class="status-badge" style="background:rgba(192,57,43,.25);color:#FF4444;border:1px solid var(--blood);animation:pulse .5s infinite;font-weight:bold">
-        😱 PANIC! Zombie đang kéo đến!
-      </span>`;
-    }
-    // ACTIVE RUMOR chip
-    if (st.activeRumor && !st.activeRumor.resolved) {
-      const rumor = st.activeRumor;
-      strip.innerHTML += `<span class="status-badge" style="background:rgba(240,192,0,.1);color:var(--amber);border:1px solid rgba(240,192,0,.3);cursor:pointer" onclick="UI_openRadio()">
-        📍 ${rumor.baitIcon||'?'} ${rumor.targetName||'Mục tiêu tin đồn'}
-      </span>`;
-    }
-    // ACTIVE BOSSES
-    const activeBosses = (gs.activeBosses||[]).filter(b=>!b.defeated);
-    if (activeBosses.length > 0) {
-      strip.innerHTML += activeBosses.map(b => {
-        const bdef = BOSS_DEFS[b.bossId];
-        return `<span class="status-badge" style="background:rgba(192,57,43,.15);color:var(--blood-bright);border:1px solid var(--blood);animation:pulse .9s infinite">
-          ${bdef?.icon||'☠'} ${bdef?.name||b.bossId} (${b.hp}/${b.maxHp} HP)
-        </span>`;
-      }).join('');
-    }
-  }
-}
-
-// ── TILE PANEL ────────────────────────────────────────
-function UI_renderTilePanel() {
-  const tile  = DW_currentTile();
-  if (!tile) return;
-  const panel = document.getElementById('tile-panel');
-  if (!panel) return;
-
-  const objects = tile.objects || [];
-  let html = '';
-
-  objects.forEach((obj, idx) => {
-    if (!obj) return;
-    // Look up definition: OBJECT_DEFS has icon+label keyed by obj.type
-    const def      = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
-    const objType  = def.type || obj.type || 'container';
-    const isEnemy  = objType === 'enemy';
-    const isDead   = isEnemy && obj.alive === false;
-    const isLooted = obj.looted;
-    if (obj.used && !isEnemy && objType !== 'npc') return;
-
-    // Resolve icon + label from def, fall back to obj fields
-    const icon  = obj.icon  || def.icon  || '📦';
-    const label = obj.label || def.label || obj.id || obj.type || '???';
-
-    let badge = '';
-    let meta  = '';
-    let click = `UI_openObjectPopup(${idx})`;
-
-    if (isEnemy && obj.alive !== false) {
-      const dmg = obj.damage ?? def.fightAp ?? 1;
-      const dmgColor = dmg>=4?'var(--blood-bright)':dmg>=2?'#FF8C00':'var(--amber)';
-      const isHorde  = obj.isHorde || def.isHorde;
-      const cnt      = obj.count || '';
-      badge = `<span class="obj-badge danger">⚔ <span style="color:${dmgColor}">${dmg}dmg</span></span>`;
-      meta  = isHorde ? `🧟 Bầy${cnt?' '+cnt+' con':''}` : '🧟 Zombie đơn lẻ';
-      click = `UI_openCombat(${idx})`;         // direct to combat
-    } else if (isDead) {
-      badge = `<span class="obj-badge neutral" style="opacity:.4">💀 Đã chết</span>`;
-      meta  = 'Lục xác để tìm đồ';
-      click = `UI_openObjectPopup(${idx})`;
-    } else if (objType === 'container') {
-      const apCost = obj.searchAp || def.searchAp || 1;
-      const isDone = obj.searched || obj.looted; // support both field names
-      badge = isDone
-        ? `<span class="obj-badge neutral" style="opacity:.4">🔓 Trống</span>`
-        : `<span class="obj-badge neutral">🔍 Lục soát</span>`;
-      meta  = isDone ? 'Đã lục soát' : `Tốn ${apCost} ĐHĐ`;
-      if (isDone) click = '';
-    } else if (objType === 'npc') {
-      badge = `<span class="obj-badge npc">💬 NPC</span>`;
-      meta  = 'Người sống sót';
-      click = `UI_execNPC(${idx})`;
-    } else if (objType === 'special' || objType === 'material') {
-      badge = `<span class="obj-badge neutral">🔧 ${def.label||'Đặc biệt'}</span>`;
-      meta  = `Tốn ${def.ap||obj.ap||1} ĐHĐ`;
-    } else if (objType === 'usable') {
-      badge = `<span class="obj-badge neutral" style="color:var(--green)">💊 Dùng được</span>`;
-      meta  = `Tốn ${def.ap||1} ĐHĐ`;
-    }
-
-    const enemyCls = isEnemy && obj.alive !== false ? ' enemy-alive' : '';
-    html += `<div class="obj-card${enemyCls}" ${click?`onclick="${click}"`:'style="cursor:default"'}>
-      <div class="obj-icon">${icon}</div>
-      <div class="obj-info">
-        <div class="obj-name">${label}</div>
-        <div class="obj-meta">${meta}</div>
-      </div>
-      ${badge}
-    </div>`;
-  });
-
-  panel.innerHTML = html || `<div class="tpi-empty">// Không có gì đặc biệt //</div>`;
-}
-
-// ── DIRECTION PAD ─────────────────────────────────────
-function UI_renderDirPad() {
-  const exits   = DW_getExits();
-  const exitMap = {};
-  exits.forEach(e => exitMap[e.id] = e);
-
-  const state   = gs._state;
-  const arrows  = { n:'↑', s:'↓', e:'→', w:'←' };
-
-  // ── Global noise + movement line ─────────────────────
-  const noiseVal  = state.noise || 0;
-  const noiseLbl  = noiseVal === 0 ? 'LOW' : noiseVal <= 3 ? 'MED' : 'HIGH';
-  const noiseCls  = noiseVal === 0 ? 'ok' : noiseVal <= 3 ? 'amber' : 'warn';
-  const totalZ    = exits.reduce((t, e) => t + (e.tile?.zombies || 0), 0);
-  const moveLbl   = totalZ === 0 ? 'NONE' : totalZ <= 2 ? 'LOW' : 'ACTIVE';
-  const moveCls   = totalZ === 0 ? 'ok' : totalZ <= 2 ? 'amber' : 'warn';
-
-  const globalEl = document.getElementById('scan-global');
-  if (globalEl) globalEl.innerHTML =
-    `<span class="scan-global-item ${noiseCls}">NOISE: ${noiseLbl}</span>` +
-    `<span class="scan-global-item ${moveCls}">MOV: ${moveLbl}</span>`;
-
-  // ── Layout: 9 positions, index 4 = YOU ───────────────
-  // Vị trí: [NW corner, N cell, NE corner, W cell, YOU, E cell, SW corner, S cell, SE corner]
-  const layout = [null, 'n', null,  'w', null, 'e',  null, 's', null];
-
-  const grid = document.getElementById('dir-grid');
-  grid.innerHTML = layout.map((dir, i) => {
-
-    // Center cell — YOU
-    if (i === 4) return `
-      <div class="scan-you">
-        <div class="scan-you-dot"></div>
-        <span>BẠN</span>
-      </div>`;
-
-    // Corner cells — transparent spacers
-    if (!dir) return `<div class="scan-corner"></div>`;
-
-    const exit = exitMap[dir];
-
-    // Out of bounds
-    if (!exit || !exit.valid) return `
-      <div class="scan-cell cant-afford" style="align-items:center;justify-content:center;">
-        <span style="font-family:var(--mono);font-size:7px;color:#1e1e1e">✕ BIÊN</span>
-      </div>`;
-
-    const tdef    = TILE_TYPES[exit.tile.type] || {};
-    const zCount  = exit.tile.zombies || 0;
-    const noise   = state.tiles[`${exit.nx},${exit.ny}`]?.noiseLvl || 0;
-    const isBuilding = exit.tileType && !['street','alley','park','rubble'].includes(exit.tileType);
-
-    // CSS classes cho cell
-    const cantAff   = !exit.canAfford  ? ' cant-afford'  : '';
-    const unexplored = !exit.tile.explored ? ' unexplored' : '';
-    const danger    = zCount > 0        ? ' danger'       : '';
-
-    // Tile name: nếu chưa khám phá thì hiện "???"
-    const nameHtml = exit.tile.explored
-      ? `<div class="scan-name">${exit.tile.name}</div>`
-      : `<div class="scan-name unknown">???</div>`;
-
-    // Icon: nếu chưa khám phá thì mờ
-    const iconHtml = `<div class="scan-icon" style="${!exit.tile.explored?'opacity:.2':''}">
-      ${tdef.icon || '?'}
-    </div>`;
-
-    // Tags: zombie count + noise + AP cost
-    let tagsHtml = '';
-    if (zCount > 0)
-      tagsHtml += `<span class="scan-tag z">🧟 ${zCount}</span>`;
-    if (noise >= 3)
-      tagsHtml += `<span class="scan-tag noise">⚠ ồn</span>`;
-    if (isBuilding && exit.tile.explored)
-      tagsHtml += `<span class="scan-tag noise" style="color:#4FC3F7;background:rgba(79,195,247,.1)">🏠 bldg</span>`;
-
-    const apColor = exit.canAfford ? 'var(--amber)' : 'var(--blood-bright)';
-    tagsHtml += `<span class="scan-tag ap" style="color:${apColor}">-${exit.cost}AP</span>`;
-
-    // Fog overlay nếu chưa khám phá
-    const fogHtml = !exit.tile.explored ? `<div class="scan-fog"></div>` : '';
-
-    return `
-      <div class="scan-cell${cantAff}${unexplored}${danger}"
-           onclick="UI_doMove('${dir}')"
-           title="${exit.tile.name} — ${exit.cost} ĐHĐ">
-        ${nameHtml}
-        ${iconHtml}
-        <div class="scan-tags">${tagsHtml}</div>
-        <div class="scan-dir-arrow">${arrows[dir]}</div>
-        ${fogHtml}
-      </div>`;
-  }).join('');
-}
-
-// ── STATS MINI ────────────────────────────────────────
-function UI_renderStatsMini() {
-  const p = gs.player;
-  const el = document.getElementById('stats-mini');
-
-  const statDefs = [
-    {label:'STRESS', max:100, val:p.stress,
-      cls: p.stress<30?'ok':p.stress<65?'warn':'crit'},
-    {label:'TRẦM', max:100, val:p.depression,
-      cls: p.depression<30?'ok':p.depression<65?'warn':'crit'},
-  ];
-
-  const rows = statDefs.map(s => {
-    const pct = Math.min(100, (s.val/s.max*100)).toFixed(0);
-    return `<div class="stat-row">
-      <span class="stat-lbl">${s.label}</span>
-      <div class="mini-track"><div class="mini-fill ${s.cls}" style="width:${pct}%"></div></div>
-      <span class="stat-val ${s.cls}" style="font-size:11px;font-family:var(--mono)">${Math.round(s.val)}</span>
-    </div>`;
-  }).join('');
-
-  el.innerHTML = rows + `
-    <div style="margin-top:6px;border-top:1px solid #141414;padding-top:5px;">
-      <div class="stat-row">
-        <span class="stat-lbl">SKILL</span>
-        <span style="font-family:var(--mono);font-size:8px;color:#555">
-          ${Object.entries(p.skills||{}).filter(([,v])=>v>0).map(([k,v])=>`${DW_SKILLS[k]?.icon||''}${v}`).join(' ')||'—'}
-        </span>
-      </div>
-      <div class="stat-row" style="margin-top:4px">
-        <span class="stat-lbl">KILL</span>
-        <span style="font-family:var(--mono);font-size:9px;color:var(--blood-bright)">${gs.stats?.kills||0}</span>
-        <span class="stat-lbl" style="margin-left:6px">MAP</span>
-        <span style="font-family:var(--mono);font-size:9px;color:#4FC3F7">${gs.stats?.tilesExplored||0}</span>
-      </div>
-    </div>`;
-}
-
-function UI_updateActionButtons() {
-  const p = gs.player;
-  document.getElementById('btn-rest').disabled  = p.ap < 1;
-  document.getElementById('btn-sleep').disabled = false;
-  document.getElementById('btn-bari').disabled  = p.ap < 3;
-}
-
-// ── WORLD MAP ─────────────────────────────────────────
-function UI_renderMap() {
-  const viewport = DW_getMapViewport(19, 13);
-  const grid     = document.getElementById('world-map-grid');
-
-  grid.innerHTML = viewport.map(row =>
-    `<div class="map-row">${row.map(cell => {
-      if (!cell.inBounds || !cell.tile) {
-        return `<div class="map-cell unexplored"><span style="color:#141414">░</span></div>`;
-      }
-      if (!cell.explored && !cell.isPlayer) {
-        return `<div class="map-cell unexplored"><span style="color:#1e1e1e">▪</span></div>`;
-      }
-      const tdef    = TILE_TYPES[cell.tile.type] || {};
-      const hasBoss = cell.hasBoss;
-      const zText   = cell.tile.zombies > 0 ? `<div class="map-cell-z">${cell.tile.zombies}z</div>` : '';
-      const bossCls = hasBoss ? ' has-boss' : '';
-      const bossIcon= hasBoss ? `<div style="font-size:8px;animation:pulse .6s infinite">☠</div>` : '';
-
-      if (cell.isPlayer) {
-        return `<div class="map-cell player${bossCls}" title="${cell.tile.name}">
-          <div class="map-cell-icon">📍</div>
-          <div style="font-size:6px;color:var(--blood-bright)">${tdef.icon||''}</div>
-        </div>`;
-      }
-      return `<div class="map-cell explored${bossCls}" title="${cell.tile.name} (${cell.wx},${cell.wy})${hasBoss?' ⚠ BOSS':''}">
-        <div class="map-cell-icon">${tdef.icon||'?'}</div>
-        ${bossIcon}
-        ${!hasBoss ? zText : ''}
-      </div>`;
-    }).join('')}</div>`
-  ).join('');
-}
-
-// ── EQUIPMENT TAB — MINECRAFT PAPER DOLL STYLE ────────
-// Trạng thái: ô grid nào đang được chọn (để hiện action buttons)
-let _equipSelectedIdx = -1;
-
-function UI_renderEquipment() {
-  _equipSelectedIdx = -1; // reset selection khi re-render
-  _renderEquipDoll();
-  _renderEquipGrid();
-}
-
-// ── LEFT: Paper doll + stats ──────────────────────────
-function _renderEquipDoll() {
-  const p   = gs.player;
-  const eq  = p.equip || {};
-  const col = document.getElementById('equip-doll-col');
-  if (!col) return;
-
-  // Hàm render một ô slot trên paper doll
-  function dollSlot(slotId, extraCls) {
-    const slotDef = EQUIP_SLOTS[slotId];
-    const itemId  = eq[slotId];
-    const edef    = itemId ? (EQUIP_DEFS[itemId] || {}) : null;
-    const idef    = itemId ? (ITEM_DB[itemId] || {}) : null;
-    const dur     = p.equipDur?.[slotId] ?? edef?.durMax ?? 100;
-    const durMax  = edef?.durMax || 100;
-    const durPct  = Math.round(dur / durMax * 100);
-    const durCls  = durPct>60?'full':durPct>30?'mid':durPct>15?'low':'crit';
-    const durFill = `<div class="doll-slot-dur"><div class="doll-slot-dur-fill dur-fill ${durCls}" style="width:${durPct}%"></div></div>`;
-    const warn    = itemId && durPct<=20 ? `<span class="doll-dur-warn" style="color:var(--blood-bright)">⚠</span>` : '';
-    const filled  = itemId ? ' filled' : '';
-    const broken  = itemId && durPct<=0 ? ' broken' : '';
-
-    if (itemId) {
-      return `<div class="doll-slot${filled}${broken}${extraCls||''}" onclick="UI_dollSlotClick('${slotId}')" title="${idef?.name||itemId}">
-        ${warn}
-        <div class="doll-slot-icon">${idef?.icon||'📦'}</div>
-        <div class="doll-slot-name">${idef?.name||itemId}</div>
-        ${durFill}
-      </div>`;
-    }
-    // Slot trống
-    return `<div class="doll-slot${extraCls||''}" data-slot="${slotId}" onclick="UI_dollSlotClick('${slotId}')" title="${slotDef.label} — Trống">
-      <div class="doll-slot-icon" style="opacity:.14">${slotDef.icon}</div>
-      <div class="doll-slot-label">${slotDef.label}</div>
-    </div>`;
-  }
-
-  const armorBonus = DW_getArmorBonus ? DW_getArmorBonus() : 0;
-  const weapId     = eq.weapon;
-  const weapEdef   = weapId ? (EQUIP_DEFS[weapId]||{}) : null;
-  const dmg        = weapEdef?.baseDmg || 0;
-  const hasLight   = eq.tool && EQUIP_DEFS[eq.tool]?.visBonus;
-  const hasRadar   = eq.tool && EQUIP_DEFS[eq.tool]?.radarBonus;
-
-  // ══ Paper Doll: 3 cols × 4 rows ══
-  // [  .   ] [ HEAD ] [  .  ]
-  // [WEAPON] [ BODY ] [  .  ]
-  // [ HANDS] [body2 ] [ TOOL]
-  // [  .   ] [ FEET ] [  .  ]
-  col.innerHTML = `
-    <div class="equip-doll-figure">
-      <div class="equip-char-name">${p.name || 'NHÂN VẬT'}</div>
-      <div class="equip-paper-doll">
-        <div class="doll-slot spacer"></div>
-        ${dollSlot('head')}
-        <div class="doll-slot spacer"></div>
-
-        ${dollSlot('weapon')}
-        ${dollSlot('body')}
-        <div class="doll-slot spacer"></div>
-
-        ${dollSlot('hands')}
-        <div class="doll-slot spacer" style="min-height:48px;background:#090909;border:1px solid #141414;"></div>
-        ${dollSlot('tool')}
-
-        <div class="doll-slot spacer"></div>
-        ${dollSlot('feet')}
-        <div class="doll-slot spacer"></div>
-      </div>
-    </div>
-    <div class="equip-stats-compact">
-      <div class="equip-stats-hdr">CHỈ SỐ TRANG BỊ</div>
-      <div class="equip-stat-row"><span class="equip-stat-k">⚔ Sát thương</span><span class="equip-stat-v ${dmg>0?'good':''}">${dmg>0?'+'+dmg+'dmg':'—'}</span></div>
-      <div class="equip-stat-row"><span class="equip-stat-k">🛡 Giảm dmg</span><span class="equip-stat-v ${armorBonus>0?'good':''}">${armorBonus>0?armorBonus+' DR':'—'}</span></div>
-      <div class="equip-stat-row"><span class="equip-stat-k">🔦 Đêm</span><span class="equip-stat-v ${hasLight?'good':'bad'}">${hasLight?'ĐÈN':'TỐI'}</span></div>
-      <div class="equip-stat-row"><span class="equip-stat-k">📡 Radar</span><span class="equip-stat-v ${hasRadar?'good':'bad'}">${hasRadar?'CÓ':'—'}</span></div>
-      <div class="equip-stat-row"><span class="equip-stat-k">💀 Kills</span><span class="equip-stat-v">${gs.stats?.kills||0}</span></div>
-      <div class="equip-stat-row"><span class="equip-stat-k">🗺 Tiles</span><span class="equip-stat-v">${gs.stats?.tilesExplored||0}</span></div>
-    </div>`;
-}
-
-// ── RIGHT: Inventory grid ─────────────────────────────
-function _renderEquipGrid() {
-  const p   = gs.player;
-  const inv = p.inventory || [];
-  const grid = document.getElementById('equip-grid');
-  const wt   = document.getElementById('equip-bag-weight');
-  if (!grid) return;
-
-  // Cập nhật header weight
-  const overweight = p.weight > p.maxWeight;
-  if (wt) {
-    wt.textContent = `${(p.weight||0).toFixed(1)}/${p.maxWeight}kg`;
-    wt.style.color = overweight ? 'var(--blood-bright)' : '#666';
-  }
-
-  if (inv.length === 0) {
-    grid.innerHTML = `<div class="grid-empty">// TÚI ĐỒ TRỐNG //<br><span style="color:#1a1a1a">Lục soát địa điểm để tìm đồ</span></div>`;
-    return;
-  }
-
-  // Render từng cell trong grid
-  grid.innerHTML = inv.map((itemId, i) => {
-    const def        = ITEM_DB[itemId] || { name:itemId, icon:'📦', weight:0, type:'misc' };
-    const isEquippable = def.equippable || !!EQUIP_DEFS[itemId];
-    const isUsable   = def.usable || false;
-    const typeCls    = `type-${def.type||'material'}`;
-    const selected   = i === _equipSelectedIdx ? ' selected' : '';
-    // Rarity display
-    const rarityId  = (p.itemRarity && p.itemRarity[i]) || 'common';
-    const rarityLbl = (typeof DW_getRarityLabel === 'function') ? DW_getRarityLabel(rarityId) : '';
-    const rarityColor = {common:'#444',uncommon:'#2a7a2a',rare:'#1a4a9a',epic:'#6a1a9a',legendary:'#9a5a00'}[rarityId] || '#444';
-    const rarityHtml = rarityId !== 'common'
-      ? `<div style="font-family:var(--mono);font-size:7px;color:${rarityColor};letter-spacing:.5px">${rarityLbl}</div>`
-      : '';
-
-    // Action buttons: chỉ hiện khi cell được chọn
-    const actUse   = isUsable   ? `<button class="grid-act-btn act-use"   onclick="UI_equipGridUse(${i})">DÙNG</button>`  : '';
-    const actEquip = isEquippable ? `<button class="grid-act-btn act-equip" onclick="UI_equipGridEquip(${i})">ĐEO</button>` : '';
-    const actDrop  = `<button class="grid-act-btn act-drop" onclick="UI_equipGridDrop(${i})">BỎ</button>`;
-
-    return `<div class="equip-grid-cell ${typeCls}${selected}" onclick="UI_equipGridSelect(${i})" title="${def.name||itemId}${def.desc?'\n'+def.desc:''}">
-      <div class="grid-icon">${def.icon||'📦'}</div>
-      <div class="grid-name">${def.name||itemId}</div>
-      ${rarityHtml}
-      <div class="grid-actions">
-        ${actUse}${actEquip}${actDrop}
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// ── Grid interactions ─────────────────────────────────
-
-// Click vào cell: toggle select (first click selects, second deselects)
-function UI_equipGridSelect(i) {
-  _equipSelectedIdx = (_equipSelectedIdx === i) ? -1 : i;
-  _renderEquipGrid(); // re-render grid only, not doll
-}
-
-// Dùng item từ grid
-function UI_equipGridUse(i) {
-  const r = DW_useItem(i);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif(r.msg, 'success');
-  _equipSelectedIdx = -1;
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-// Đeo item từ grid → tự nhảy lên đúng slot trên paper doll
-function UI_equipGridEquip(i) {
-  const inv    = gs.player.inventory || [];
-  const itemId = inv[i];
-  if (!itemId) return;
-  const r = DW_equipItem(itemId);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  const def = ITEM_DB[itemId] || {};
-  showNotif(`✅ Trang bị ${def.name||itemId}`, 'success');
-  _equipSelectedIdx = -1;
-  UI_renderEquipment(); // re-render cả doll + grid
-  UI_renderHeader();
-}
-
-// Bỏ item khỏi túi
-function UI_equipGridDrop(i) {
-  const inv    = gs.player.inventory || [];
-  const itemId = inv[i];
-  if (!itemId) return;
-  const r = DW_dropItem(itemId);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif(`🗑 Bỏ ${DW_itemName(itemId)}`, '');
-  _equipSelectedIdx = -1;
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-// Click vào slot trên paper doll → tháo hoặc sửa
-function UI_dollSlotClick(slotId) {
-  const eq     = gs.player.equip || {};
-  const itemId = eq[slotId];
-  if (!itemId) {
-    showNotif(`Slot ${EQUIP_SLOTS[slotId]?.label||slotId} trống — đeo đồ từ túi bên phải`, '');
-    return;
-  }
-  // Hiện mini popup để chọn SỬA hoặc THÁO
-  const def  = ITEM_DB[itemId] || {};
-  const sdef = EQUIP_SLOTS[slotId];
-  showPopup({
-    icon: def.icon || '📦',
-    title: def.name || itemId,
-    meta: sdef?.label || slotId,
-    actions: [
-      { label:`🔧 Sửa trang bị`, cost:'cần vật liệu', fn: () => UI_doRepair(slotId) },
-      { label:`✕ Tháo ra túi đồ`, cost:'', fn: () => UI_doUnequip(slotId) },
-    ]
-  });
-}
-
-function UI_doUnequip(slot) {
-  const r = DW_unequipSlot(slot);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  closePopup();
-  showNotif(`↩ ${r.msg}`, '');
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-function UI_doRepair(slot) {
-  const r = DW_repairEquip(slot);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  closePopup();
-  showNotif(`🔧 Sửa xong: ${r.durability}/${r.maxDurability}`, 'success');
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-// ── LEGACY stubs (giữ để không break code cũ gọi vào) ─
-function UI_equipHint() {}
-function UI_equipFromInv() {}
-
-// ── STORY LOG (placeholder for future NPC stories) ────
-const storyEntries = []; // sẽ được push từ NPC events tương lai
-
-function UI_renderStoryLog() {
-  const list = document.getElementById('story-list');
-  if (!storyEntries.length) {
-    list.innerHTML = `
-      <div class="story-empty">
-        📖 Câu chuyện của bạn với thế giới<br>
-        sẽ được ghi lại tại đây.<br><br>
-        <span style="color:#1e1e1e">// Gặp gỡ NPC · Khám phá địa điểm đặc biệt //</span>
-      </div>`;
-    return;
-  }
-  list.innerHTML = storyEntries.map(e => `
-    <div class="log-entry story">
-      <div class="log-time">${e.day ? `Ngày ${e.day}` : ''} ${e.title||''}</div>
-      <div class="log-msg">${e.text}</div>
-    </div>`).join('');
-}
-
-// Helper để engine khác push story entries (dùng sau)
-function UI_addStoryEntry(text, title='') {
-  storyEntries.unshift({ text, title, day: gs?.time?.day || 1 });
-  if (storyEntries.length > 50) storyEntries.length = 50; // giữ 50 entries
-}
-
-function UI_doUnequip(slot) {
-  const r = DW_unequipSlot(slot);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif(`Tháo trang bị.`, '');
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-function UI_doRepair(slot) {
-  const r = DW_repairEquip(slot);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif(`🔧 Sửa xong: ${r.durability}/${r.maxDurability}`, 'success');
-  UI_renderEquipment();
-  UI_renderHeader();
-}
-
-// ── CRAFTING TAB ─────────────────────────────────────
-function UI_renderCraft() {
-  const p       = gs.player;
-  const recipes = DW_getAvailableRecipes();
-  const craftEl = document.getElementById('craft-list');
-  const skillEl = document.getElementById('craft-skill-label');
-  skillEl.textContent = `🔧${p.skills.carpentry||0}  🩹${p.skills.firstaid||0}`;
-
-  craftEl.innerHTML = recipes.map(r => {
-    const lockedClass = !r.canCraft ? ' locked' : '';
-    const canClass    = r.canCraft  ? ' can-craft' : '';
-
-    const ingBadges = r.ingredients.map(ingId => {
-      const has = (r.matched||[]).includes(ingId);
-      return `<span class="craft-ing ${has?'have':'need'}">${has?'✓':'✗'} ${DW_itemName(ingId)}</span>`;
-    }).join('');
-
-    const skillBadges = Object.entries(r.skillReq||{}).filter(([,v])=>v>0).map(([sk,lv]) => {
-      const has = (p.skills[sk]||0) >= lv;
-      return `<span class="craft-ing ${has?'have':'skill-need'}">${has?'✓':'✗'} ${DW_SKILLS[sk]?.name||sk} Lv${lv}</span>`;
-    }).join('');
-
-    return `<div class="craft-card${canClass}${lockedClass}">
-      <div class="craft-top">
-        <div class="craft-recipe-icon">${r.icon||'⚙'}</div>
-        <div>
-          <div class="craft-recipe-name">${r.name}</div>
-          <div class="craft-recipe-desc">${r.desc}</div>
-        </div>
-      </div>
-      <div class="craft-ingredients">${ingBadges}${skillBadges}</div>
-      <div class="craft-ap-cost">→ ${DW_itemName(r.result)} · -${r.apCost} ĐHĐ</div>
-      <button class="craft-btn" onclick="UI_doCraft('${r.id}')" ${!r.canCraft?'disabled':''}>
-        ${r.canCraft ? '⚙ CHẾ TẠO' : '🔒 CHƯA ĐỦ'}
-      </button>
-    </div>`;
-  }).join('');
-}
-
-function UI_doCraft(recipeId) {
-  const r = DW_craft(recipeId);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  showNotif(`⚙ Chế tạo thành công: ${r.result}`, 'success');
-  UI_renderAll();
-  UI_renderCraft();
-}
-
-// ── INVENTORY (legacy — tab-inv đã xóa, giữ để tránh crash nếu còn gọi) ──
-function UI_renderInventory() {
-  const list = document.getElementById('inv-list');
-  if (!list) return; // tab-inv đã bị xóa khỏi DOM — bỏ qua
-  const p   = gs.player;
-  const inv = p.inventory;
-  if (!inv.length) {
-    list.innerHTML = '<div class="inv-empty">// TÚI ĐỒ TRỐNG //</div>';
-    return;
-  }
-  list.innerHTML = inv.map((itemId, i) => {
-    const def     = ITEM_DB[itemId] || { name:itemId, icon:'📦', weight:0, type:'misc' };
-    const usable  = def.usable || false;
-    const equipSlot = def.slot || EQUIP_DEFS[itemId] ? (def.slot || 'weapon') : null;
-    const isEquipped= equipSlot && p.equip?.[equipSlot] === itemId;
-    const typeCls = `type-${def.type||'material'}`;
-
-    return `<div class="inv-item ${typeCls}">
-      <div class="inv-icon">${def.icon||'📦'}</div>
-      <div class="inv-name">
-        ${def.name||itemId}
-        ${isEquipped?`<span class="inv-tag">[ĐÃ TRANG BỊ]</span>`:''}
-        ${def.desc?`<span class="inv-tag">${def.desc}</span>`:''}
-      </div>
-      ${usable?`<button class="inv-btn use" onclick="UI_useItem(${i})">DÙNG</button>`:''}
-      ${EQUIP_DEFS[itemId]&&!isEquipped?`<button class="inv-btn equip" onclick="UI_equipItem(${i})">ĐEO</button>`:''}
-      <button class="inv-btn drop" onclick="UI_dropItem(${i})">BỎ</button>
-      <div class="inv-weight">${def.weight||0}kg</div>
-    </div>`;
-  }).join('');
-}
-
-function UI_equipItem(idx) {
-  // Engine mới dùng itemId string, không phải index số
-  const inv    = gs.player.inventory || [];
-  const itemId = inv[idx];
-  if (!itemId) return;
-  const r = DW_equipItem(itemId);
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  const def = ITEM_DB[itemId] || {};
-  showNotif(`🎽 Đã trang bị: ${def.name||itemId}`, 'success');
-  if (activeTab === 'equip') {
-    UI_renderEquipment();
-  } else {
-    UI_tab('equip');
-  }
-  UI_renderHeader();
-}
-
-// ── LOG ──────────────────────────────────────────────
-function UI_renderLog() {
-  const list = document.getElementById('log-list');
-  if (!gs.log.length) {
-    list.innerHTML='<div style="padding:20px;font-family:var(--mono);font-size:11px;color:#2a2a2a;line-height:2">// Nhật ký trống — hành động của bạn sẽ xuất hiện tại đây //</div>';
-    return;
-  }
-  list.innerHTML = gs.log.map(e => `
-    <div class="log-entry ${e.type||'info'}">
-      <div class="log-msg">${e.text||e.msg||''}</div>
-    </div>`).join('');
-}
-
-// ── OBJECT POPUP ─────────────────────────────────────
-function UI_openObjectPopup(objIdx) {
-  const tile = DW_currentTile();
-  const obj  = tile.objects[objIdx];
-  if (!obj) return;
-
-  currentPopupObj = { obj, idx: objIdx };
-
-  // obj.type là KEY trong OBJECT_DEFS (ví dụ: 'firstaid_kit', 'zombie', 'shelf')
-  // def.type là CATEGORY ('usable','enemy','container','material','special','npc')
-  const _OD2   = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
-  const def    = _OD2[obj.type] || {};
-  const objCat = def.type || obj.type || 'container';
-
-  document.getElementById('popup-icon').textContent  = obj.icon || def.icon || '📦';
-  document.getElementById('popup-title').textContent = obj.label || def.label || obj.type || '???';
-  document.getElementById('popup-result').textContent = '';
-
-  let meta = '', btns = '', extraHtml = '';
-
-  if (objCat === 'container') {
-    const isSearched = obj.searched || obj.looted;
-    const apCost = def.searchAp || obj.searchAp || 2;
-    meta = isSearched ? 'Đã lục soát' : `Có thể lục soát · ${apCost} ĐHĐ`;
-    btns = `
-      <button class="popup-btn" onclick="UI_execSearch(${objIdx},false)" ${isSearched||gs.player.ap<apCost?'disabled':''}>
-        🔍 Lục soát nhanh <span class="pbcost">-${apCost} ĐHĐ</span>
-      </button>
-      <button class="popup-btn" onclick="UI_execSearch(${objIdx},true)" ${isSearched||gs.player.ap<apCost+1?'disabled':''}>
-        🔎 Lục soát kỹ <span class="pbcost">-${apCost+1} ĐHĐ</span>
-      </button>`;
-
-  } else if (objCat === 'enemy' && obj.alive !== false) {
-    const exits = DW_getExits();
-    const fleeDir = exits[0]?.id || 'n';
-
-    if (obj.isBoss) {
-      // BOSS COMBAT
-      const bossEntry = (gs.activeBosses||[])[obj.bossEntryIdx];
-      const bdef = bossEntry ? BOSS_DEFS[bossEntry.bossId] : null;
-      const bHp  = bossEntry?.hp || obj.hp || 0;
-      const bMax = bdef?.maxHp || 1;
-      const hpPct = (bHp / bMax * 100).toFixed(0);
-      const phase  = bHp > bMax*0.6 ? 1 : bHp > bMax*0.25 ? 2 : 3;
-      const phaseColors = ['','var(--green)','var(--amber)','var(--blood-bright)'];
-
-      meta = `${bdef?.desc || 'Kẻ thù nguy hiểm'} · PHASE ${phase}`;
-
-      extraHtml = `
-        <div class="boss-hp-bar">
-          <div class="boss-hp-label">
-            <span style="color:var(--blood-bright);font-family:var(--mono)">${bdef?.icon||'☠'} ${bdef?.name} HP</span>
-            <span style="color:${phaseColors[phase]};font-family:var(--mono)">${bHp}/${bMax} · PHASE ${phase}</span>
-          </div>
-          <div class="boss-hp-track"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>
-          <div class="boss-phase" style="color:${phaseColors[phase]}">
-            ${phase===1?'🟢 Ổn định':phase===2?'🟡 Điên cuồng':'🔴 Tuyệt vọng - nguy hiểm nhất!'}
-          </div>
-        </div>`;
-
-      btns = `<div class="combat-grid">
-        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'normal')" ${gs.player.ap<(bdef?.fightAp||5)?'disabled':''}>
-          <span class="combat-opt-icon">⚔️</span>
-          <span class="combat-opt-name">Tấn Công</span>
-          <div class="combat-opt-desc">D20+combat vs DC${bdef?.dc||12}. Cân bằng.</div>
-          <div class="combat-opt-cost">-${bdef?.fightAp||5} ĐHĐ</div>
-        </button>
-        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'heavy')" ${gs.player.ap<(bdef?.fightAp||5)+2?'disabled':''}>
-          <span class="combat-opt-icon">💪</span>
-          <span class="combat-opt-name">Đòn Mạnh</span>
-          <div class="combat-opt-desc">D20+2 bonus. Sát thương x2. Miss = nhận x1.5.</div>
-          <div class="combat-opt-cost">-${(bdef?.fightAp||5)+2} ĐHĐ</div>
-        </button>
-        <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${gs.player.ap<2?'disabled':''} style="margin:0">
-          🏃 Bỏ Chạy — Boss sẽ vẫn ở đây! <span class="pbcost">-${exits[0]?.cost||2} ĐHĐ</span>
-        </button>
-        <button class="combat-opt" onclick="UI_execItemFight(${objIdx})" ${!gs.player.inventory.some(i=>/molotov|lựu đạn|bình chữa cháy/i.test(i))?'disabled':''}>
-          <span class="combat-opt-icon">💥</span>
-          <span class="combat-opt-name">Dùng Đồ Ném</span>
-          <div class="combat-opt-desc">Dùng Molotov / lựu đạn. AoE.</div>
-          <div class="combat-opt-cost">-2 ĐHĐ</div>
-        </button>
-      </div>`;
-    } else {
-      // NORMAL ENEMY — multi-option combat
-      meta = obj.isHorde ? `Bầy ${obj.count} con · Sát thương ${obj.damage}/hit` : `Sát thương ${obj.damage}/hit`;
-      const hasThrowable = gs.player.inventory.some(i => /molotov|lựu đạn|bình chữa cháy/i.test(i));
-      const hasStealth   = (gs.player.skills?.sneak||0) >= 2;
-      btns = `<div class="combat-grid">
-        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'normal')" ${gs.player.ap<obj.fightAp?'disabled':''}>
-          <span class="combat-opt-icon">⚔️</span>
-          <span class="combat-opt-name">Tấn Công</span>
-          <div class="combat-opt-desc">D20+combat vs DC. Cân bằng rủi ro.</div>
-          <div class="combat-opt-cost">-${obj.fightAp} ĐHĐ</div>
-        </button>
-        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'heavy')" ${gs.player.ap<obj.fightAp+2?'disabled':''}>
-          <span class="combat-opt-icon">💪</span>
-          <span class="combat-opt-name">Đòn Mạnh</span>
-          <div class="combat-opt-desc">+2 roll, damage x2. Miss = nhận x1.5.</div>
-          <div class="combat-opt-cost">-${obj.fightAp+2} ĐHĐ</div>
-        </button>
-        <button class="combat-opt" onclick="UI_execFight(${objIdx},'stealth')" ${(!hasStealth||gs.player.ap<obj.fightAp+1||obj.isHorde)?'disabled':''}>
-          <span class="combat-opt-icon">🗡️</span>
-          <span class="combat-opt-name">Ám Sát</span>
-          <div class="combat-opt-desc">${hasStealth?'Sneak ≥2 ✓ 1-hit kill nếu thành công.':'Cần Tàng hình ≥2'}</div>
-          <div class="combat-opt-cost">-${obj.fightAp+1} ĐHĐ</div>
-        </button>
-        <button class="combat-opt" onclick="UI_execItemFight(${objIdx})" ${!hasThrowable||gs.player.ap<2?'disabled':''}>
-          <span class="combat-opt-icon">💥</span>
-          <span class="combat-opt-name">Ném Đồ</span>
-          <div class="combat-opt-desc">${hasThrowable?'Dùng Molotov/lựu đạn. AoE.':'Cần Molotov hoặc lựu đạn'}</div>
-          <div class="combat-opt-cost">-2 ĐHĐ</div>
-        </button>
-      </div>
-      <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${gs.player.ap<2?'disabled':''}>
-        🏃 Bỏ chạy (${exits[0]?.label||'?'}) <span class="pbcost">-${Math.max(1,(exits[0]?.cost||2)-1)} ĐHĐ</span>
-      </button>`;
-    }
-  } else if (objCat === 'enemy' && obj.alive === false) {
-    meta = 'Đã bị tiêu diệt';
-    btns = '<div style="padding:8px;font-family:var(--mono);font-size:9px;color:var(--dim)">Không còn đe dọa.</div>';
-  } else if (objCat === 'npc') {
-    meta = 'Người sống sót · có thể giao tiếp';
-    btns = `<button class="popup-btn" onclick="UI_execNPC(${objIdx})">💬 Nói chuyện <span class="pbcost">-1 ĐHĐ</span></button>`;
-  } else if (objCat === 'special') {
-    const sCost = def.ap || obj.ap || 2;
-    meta = def.label ? `${def.label} · ${sCost} ĐHĐ` : 'Vật đặc biệt';
-    btns = `<button class="popup-btn" onclick="UI_execSpecial(${objIdx})" ${gs.player.ap<sCost?'disabled':''}>🔧 Sử dụng <span class="pbcost">-${sCost} ĐHĐ</span></button>`;
-  } else if (objCat === 'usable') {
-    // Popup: thông tin vật phẩm + hỏi Lấy / Không
-    const uCost  = def.ap || obj.ap || 1;
-    const uLabel = def.label || obj.label || obj.type;
-    const uDesc  = def.desc  || 'Vật phẩm có thể sử dụng.';
-    meta = obj.used ? 'Đã nhặt' : `Vật phẩm trên sàn · ${uCost} ĐHĐ`;
-    if (obj.used) {
-      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
-    } else {
-      btns = `
-        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${uDesc}</div>
-        <div style="display:flex;gap:8px">
-          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
-            onclick="UI_execPickupItem(${objIdx},'usable')" ${gs.player.ap<uCost?'disabled':''}>
-            ✅ Lấy <span class="pbcost">-${uCost} ĐHĐ</span>
-          </button>
-          <button class="popup-btn" style="flex:1;opacity:.5"
-            onclick="document.getElementById('popup-overlay').classList.remove('show')">
-            ❌ Không
-          </button>
-        </div>`;
-    }
-  } else if (objCat === 'material') {
-    // Popup: thông tin vật liệu + hỏi Lấy / Không
-    const mCost  = def.ap || obj.ap || 1;
-    const mLabel = def.label || obj.label || obj.type;
-    const mDesc  = def.desc  || 'Vật liệu. Dùng để craft hoặc xây barricade.';
-    meta = obj.used ? 'Đã nhặt' : `Vật liệu trên sàn · ${mCost} ĐHĐ`;
-    if (obj.used) {
-      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
-    } else {
-      btns = `
-        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${mDesc}</div>
-        <div style="display:flex;gap:8px">
-          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
-            onclick="UI_execPickupItem(${objIdx},'material')" ${gs.player.ap<mCost?'disabled':''}>
-            ✅ Lấy <span class="pbcost">-${mCost} ĐHĐ</span>
-          </button>
-          <button class="popup-btn" style="flex:1;opacity:.5"
-            onclick="document.getElementById('popup-overlay').classList.remove('show')">
-            ❌ Không
-          </button>
-        </div>`;
-    }
-  }
-
-  document.getElementById('popup-meta').textContent = meta;
-  document.getElementById('popup-actions').innerHTML = btns;
-
-  // Insert boss HP bar before actions if boss
-  if (extraHtml) {
-    document.getElementById('popup-actions').insertAdjacentHTML('beforebegin', extraHtml);
-  }
-
-  document.getElementById('popup-overlay').classList.add('show');
-}
-
-function UI_closePopup(e) {
-  if (e && e.target !== document.getElementById('popup-overlay')) return;
-  document.getElementById('popup-overlay').classList.remove('show');
-  currentPopupObj = null;
-}
-
-// ── ACTION EXECUTIONS ────────────────────────────────
-function UI_execSearch(idx, deep) {
-  const r = DW_search(idx, deep);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-
-  const msg = r.items?.length
-    ? `✅ Tìm thấy: ${r.items.join(', ')}`
-    : r.empty ? '🔓 Trống rỗng.' : `❌ ${r.msg}`;
-
-  document.getElementById('popup-result').innerHTML = `<span style="color:${r.items?.length?'var(--green)':'var(--dim)'}">${msg}</span>`;
-  if (r.items?.length) showNotif('Nhặt được: '+r.items.join(', '),'success');
-
-  UI_renderAll();
-  setTimeout(()=> UI_openObjectPopup(idx), 50);
-}
-
-function UI_execFight(idx, mode='normal') {
-  const r = DW_fight(idx, mode);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-
-  const col  = r.outcome==='nat20'?'var(--green)':r.outcome==='success'?'var(--amber)':r.outcome==='nat1'?'var(--blood-bright)':'#FF8C00';
-  const rollDisp = r.roll===20?'🎯 NAT20':r.roll===1?'💀 NAT1':`D20:${r.roll}`;
-  const msg  = `[${rollDisp}] ${r.msg}${r.hpLoss?' (-'+r.hpLoss.toFixed(1)+' HP)':''}`;
-
-  document.getElementById('popup-result').innerHTML = `<span style="color:${col}">${msg}</span>`;
-
-  if (r.outcome==='nat20') showNotif('🎯 Hạ gục ngay lập tức!','success');
-  else if (r.outcome==='nat1') showNotif('💀 Thảm họa!','danger');
-  else if (r.outcome==='success') showNotif('✅ Thành công!','success');
-
-  UI_renderAll();
-  setTimeout(()=> UI_openObjectPopup(idx), 50);
-
-  if (gs.player.hp <= 0) setTimeout(()=>{ UI_gameOver('HP về 0 — tử vong.'); }, 600);
-}
-
-function UI_execItemFight(idx) {
-  // Find throwable in inventory
-  const throwIdx = gs.player.inventory.findIndex(i => /molotov|lựu đạn|bình chữa cháy/i.test(i));
-  if (throwIdx === -1) { showNotif('Không có đồ ném!','danger'); return; }
-
-  const obj = DW_currentTile().objects[idx];
-  // For boss, use boss fight with item mode (pass boss idx)
-  if (obj?.isBoss) {
-    const r = DW_fightBoss(obj.bossEntryIdx, 'normal'); // bosses don't have item mode — use normal fight
-    if (!r.ok) { showNotif(r.msg,'danger'); return; }
-    _handleBossFightResult(r, obj.bossEntryIdx);
-  } else {
-    const r = DW_fight(idx, 'item', throwIdx);
-    if (!r.ok) { showNotif(r.msg,'danger'); return; }
-    const col = r.outcome==='success'?'var(--green)':'var(--blood-bright)';
-    document.getElementById('popup-result').innerHTML = `<span style="color:${col}">${r.msg}</span>`;
-    showNotif(r.msg, r.outcome==='success'?'success':'danger');
-    UI_renderAll();
-    setTimeout(()=> UI_openObjectPopup(idx), 50);
-  }
-  if (gs.player.hp <= 0) setTimeout(()=>UI_gameOver('HP về 0'), 600);
-}
-
-function UI_execBossFight(bossEntryIdx, mode='normal') {
-  const r = DW_fightBoss(bossEntryIdx, mode);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  _handleBossFightResult(r, bossEntryIdx);
-}
-
-function _handleBossFightResult(r, bossEntryIdx) {
-  const col = r.outcome==='nat20'?'var(--green)':r.outcome==='success'?'var(--amber)':r.outcome==='nat1'?'var(--blood-bright)':'#FF8C00';
-  document.getElementById('popup-result').innerHTML = `
-    <span style="color:${col}">${r.msg}${r.hpLoss?' (-'+r.hpLoss.toFixed(1)+' HP)':''}</span>
-    ${r.bossDmg?`<br><span style="color:var(--blood-bright);font-family:var(--mono);font-size:9px">Boss -${r.bossDmg} HP · Còn ${r.bossEntry?.hp||0}/${r.bdef?.maxHp||0} HP</span>`:''}
-  `;
-
-  if (r.bossDefeated) {
-    showNotif(`🏆 ${r.bdef?.icon||'☠'} ${r.bdef?.name} BỊ TIÊU DIỆT!`, 'success');
-    document.getElementById('popup-overlay').classList.remove('show');
-  } else if (r.outcome==='nat20') {
-    showNotif('🎯 Critical hit vào boss!','success');
-  } else if (r.outcome==='nat1') {
-    showNotif('💀 Boss phản công kinh hoàng!','danger');
-  }
-
-  UI_renderAll();
-  // Refresh boss popup if still alive
-  if (!r.bossDefeated) {
-    const tile = DW_currentTile();
-    const bossObjIdx = tile.objects.findIndex(o => o.isBoss && o.bossEntryIdx === bossEntryIdx);
-    if (bossObjIdx >= 0) setTimeout(()=> UI_openObjectPopup(bossObjIdx), 60);
-  }
-  if (gs.player.hp <= 0) setTimeout(()=>UI_gameOver('HP về 0 — Tử trận trước boss.'), 600);
-}
-
-function UI_execFlee(dir) {
-  const r = DW_flee(dir);
-  document.getElementById('popup-overlay').classList.remove('show');
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  showNotif('🏃 Bỏ chạy thành công.','success');
-  UI_renderAll();
-  aiDescribeNewTile();
-}
-
-async function UI_execNPC(idx) {
-  // Giảm stress (không trừ AP theo yêu cầu)
-  if (gs._state) {
-    gs.setState({ ...gs._state, stress: Math.max(0, (gs._state.stress||0)-8) });
-  }
-  DW_addLog('💬 Gặp gỡ người sống sót. Stress↓');
-
-  // Đóng popup chính, hiện loading
-  document.getElementById('popup-overlay').classList.remove('show');
-  UI_showNarrative('...', 'Người sống sót', 'Đang kết nối...');
-
-  // Gọi AI
-  let text = 'Cẩn thận... chúng đang đến gần.';
-  try {
-    const s        = gs._state;
-    const tile     = DW_currentTile();
-    const tileName = tile?.name || 'nơi vắng vẻ';
-    const prompt   = `Bạn là người sống sót gặp nhân vật chính tại ${tileName}. Ngày ${s.day||1} của thảm họa zombie. HP: ${s.hp||0}, Stress: ${s.stress||0}%. Nói 2 câu ngắn — chia sẻ thông tin, cảnh báo, hoặc xin đồ. Tiếng Việt, giọng căng thẳng.`;
-    const res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL, max_tokens: 100,
-        system: 'Bạn là NPC trong game zombie survival. Chỉ nói đúng 2 câu ngắn, không hơn.',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const d = await res.json();
-    text = d.content?.[0]?.text?.trim() || text;
-  } catch(e) { /* dùng fallback */ }
-
-  // Cập nhật narrative popup với text thật
-  UI_showNarrative(text, 'Người sống sót', `Ngày ${gs?._state?.day||1} — ${DW_currentTile()?.name||'vô danh'}`);
-
-  // Lưu vào Story Log
-  UI_addStoryEntry(`💬 "${text}"`, '👤 Người sống sót');
-  showNotif('💬 Stress↓ Gặp người sống sót', 'success');
-
-  if (typeof UI_renderHeader === 'function') UI_renderHeader();
-}
-
-function UI_execSpecial(idx) {
-  const tile = DW_currentTile();
-  const obj  = tile?.objects?.[idx];
-  const _ODs = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
-  const def  = _ODs[obj?.type] || {};
-  const ap   = def.ap || obj?.ap || 2;
-  DW_tickTime(ap);
-  DW_addLog(`🔧 Sử dụng ${def.label || obj?.label || 'vật đặc biệt'}.`);
-  const rawTile = gs._state?.tiles?.[`${gs._state.x},${gs._state.y}`];
-  if (rawTile?.objects?.[idx]) rawTile.objects[idx].used = true;
-  document.getElementById('popup-result').innerHTML = `<span style="color:var(--amber)">Đã sử dụng ${def.label||obj?.label||''}.</span>`;
-  UI_renderAll();
-}
-
-// UI_execPickupItem: nhặt vật phẩm/vật liệu trên sàn vào túi đồ
-// Dùng cho cả 'usable' và 'material' category
-function UI_execPickupItem(idx, _cat) {
-  const tile = DW_currentTile();
-  const obj  = tile?.objects?.[idx];
-  if (!obj) { showNotif('Không tìm thấy vật phẩm.','danger'); return; }
-
-  const _ODP = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
-  const def  = _ODP[obj.type] || {};
-  const ap   = def.ap || obj.ap || 1;
-  const s    = gs._state;
-  if (!s) return;
-  if (s.ap < ap) { showNotif(`Cần ${ap} ĐHĐ.`, 'danger'); return; }
-
-  // Map object key → ITEM_DB id (dùng obj.type làm item id nếu có trong ITEM_DB)
-  const keyToItem = {
-    firstaid_kit:  'bandage',
-    barricade_mat: 'wood_plank',
-    fuel_can:      'fuel_canister',
-  };
-  const itemId = obj.itemId || keyToItem[obj.type] || obj.type;
-  const itemDef = (typeof ITEM_DB !== 'undefined') ? (ITEM_DB[itemId] || null) : null;
-  const itemName = itemDef?.name || def.label || itemId;
-
-  const tileKey = `${s.x},${s.y}`;
-  const newObjects = s.tiles[tileKey].objects.map((o, i) =>
-    i === idx ? { ...o, used: true } : o
-  );
-
-  let ns = {
-    ...s,
-    ap: s.ap - ap,
-    inventory:  [...(s.inventory  || []), itemId],
-    itemRarity: [...(s.itemRarity || []), 'common'],
-    tiles: { ...s.tiles, [tileKey]: { ...s.tiles[tileKey], objects: newObjects } },
-  };
-  ns.log = [`🧲 Nhặt: ${itemName}.`, ...(ns.log || [])];
-
-  gs.setState(ns);
-  showNotif(`Nhặt được: ${itemName}`, 'success');
-  document.getElementById('popup-overlay').classList.remove('show');
-  UI_renderAll();
-}
-
-// ── DIRECTION MOVEMENT ───────────────────────────────
-async function UI_doMove(dir) {
-  const r = DW_move(dir);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-
-  // Check if we hit an approach (building entry)
-  if (r.approaching || gs._state?.approaching) {
-    const target = gs._state.approaching;
-    if (target) {
-      UI_renderAll();
-      _UI_showEntryPopup(target.targetX, target.targetY);
+    // ── GỌI ENGINE ────────────────────────────────────
+    var opts = {};
+    if (mode === 'heavy')   opts.heavy   = true;
+    if (mode === 'stealth') opts.stealth = true;
+
+    var rawFn = (typeof _raw !== 'undefined' && _raw.DW_fight) ? _raw.DW_fight
+              : (typeof window.DW_fightRaw === 'function') ? window.DW_fightRaw
+              : null;
+    if (!rawFn) { _showLog('⚠ Engine combat unavailable', '#cc2200'); _arena.phase='idle'; return; }
+
+    var result = rawFn(state, _selectedEnemyObjId, opts);
+
+    // Engine trả về: { ok, hit, enemyDead, dmg, enemyHp, enemyMaxHp, dmgTaken, state }
+    // Nếu không đủ STM/AP: ok=false — gợi ý nút Nghỉ
+    if (!result.ok) {
+      var exhaustMsg = result.staminaExhausted
+        ? '😮‍💨 Hết sức bền! Nhấn [NGHỈ] để hồi SB — zombie sẽ phản công.'
+        : (result.msg || 'Không đủ ĐHĐ!');
+      _showLog(exhaustMsg, '#cc8800');
+      _arena.phase = 'idle';
+      _updateButtons();
       return;
     }
+
+    // Cập nhật global state ngay lập tức
+    if (result.state) gs.setState(result.state);
+
+    // ── ĐỌC KẾT QUẢ TRỰC TIẾP TỪ ENGINE ─────────────
+    // KHÔNG parse log text — dùng structured fields từ engine
+    var isHit      = result.hit === true;       // engine set rõ ràng
+    var enemyDead  = result.enemyDead === true;
+    var dmgOut     = result.dmg      || 0;      // sát thương gây cho zombie
+    var dmgTaken   = result.dmgTaken || 0;      // sát thương player nhận (khi miss)
+    var newEnemyHp = result.enemyHp;            // HP zombie sau khi bị thương (undefined nếu chết)
+    var newLog     = (result.state && result.state.log && result.state.log[0]) || result.msg || '';
+
+    // ── ANIMATION PLAYER → ENEMY ──────────────────────
+    var projType = _getProjectileType(state);
+    var pPos     = _playerPixelPos();
+    if (targetArena) {
+      _spawnProjectile(projType, pPos.px, pPos.py, targetArena.px, targetArena.py);
+    }
+
+    setTimeout(function () {
+
+      if (isHit && targetArena) {
+        // ── HIT: zombie bị trúng ───────────────────────
+        _spawnBlood(targetArena.px, targetArena.py, Math.max(1, Math.round(dmgOut)));
+        targetArena.flashTimer  = 14;
+        targetArena.flashColor  = '#cc2200';
+
+        if (enemyDead) {
+          // Zombie chết
+          targetArena.hp   = 0;
+          targetArena.dead = true;
+          _addEffect('explosion', targetArena.px + 8, targetArena.py + 12, {
+            maxLife: 20, maxR: 22,
+          });
+        } else {
+          // Zombie bị thương — dùng result.enemyHp trực tiếp, KHÔNG tìm trong tile
+          // result.enemyHp là giá trị chính xác engine vừa tính
+          targetArena.hp    = (newEnemyHp !== undefined) ? newEnemyHp : Math.max(0, targetArena.hp - dmgOut);
+          targetArena.maxHp = result.enemyMaxHp || targetArena.maxHp;
+
+          // Zombie phản công nhỏ (animation lunge về phía player) nhưng MISS (player tránh được)
+          setTimeout(function () {
+            _arena.player.flashTimer = 5;
+            _arena.player.flashColor = 'rgba(192,57,43,0.25)'; // nhạt — zombie gần trúng
+          }, 200);
+        }
+
+      } else {
+        // ── MISS: player trượt — zombie áp sát (không mất HP ngay) ──
+        // HP chỉ mất khi bấm NGHỈ (Threat Round). Miss chỉ tốn STM.
+        _addEffect('miss_text', targetArena ? targetArena.px + 8 : pPos.px, targetArena ? targetArena.py : pPos.py, { maxLife: 25 });
+
+        // Flash nhẹ trên zombie (đang áp sát player) — KHÔNG flash player
+        if (targetArena) {
+          targetArena.flashTimer = 8;
+          targetArena.flashColor = '#ff9900'; // cam — zombie đang tăng áp lực
+        }
+
+        // Không show dmg từ player (dmgTaken=0 theo thiết kế mới)
+      }
+
+      // ── CẬP NHẬT UI ───────────────────────────────
+      _renderEnemyList(_arena.enemies);
+      _updateHUD(result.state || state);
+
+      // Màu log: vàng=hit, xanh=miss (player bị tổn thương)
+      var logColor = isHit ? (enemyDead ? '#44aa44' : '#ff8844') : '#cc6644';
+      _showLog(newLog, logColor);
+
+      // ── KIỂM TRA KẾT THÚC ─────────────────────────
+      if (result.state && result.state.gameOver) {
+        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
+        setTimeout(hide, 2000);
+        return;
+      }
+
+      // Tất cả enemy chết
+      var allDead = _arena.enemies.every(function (e) { return e.dead || e.hp <= 0; });
+      if (allDead) {
+        _showLog('✅ Kẻ thù đã bị tiêu diệt!', '#44aa44');
+        setTimeout(hide, 1600);
+        _arena.phase = 'idle';
+        return;
+      }
+
+      _arena.phase = 'idle';
+      _updateButtons();
+
+    }, 180);
   }
 
-  UI_renderAll();
-  if (activeTab === 'map') UI_worldMapCenter();
+  // Xử lý flee
+  function _doFlee() {
+    var state = gs && gs._state;
+    if (!state) return;
+    if (_arena.phase !== 'idle') return;
 
-  if (r.firstVisit) {
-    await aiDescribeNewTile();
-  }
+    _arena.phase = 'enemy_attack';
 
-  if (gs.player.ap <= 0) UI_showExhausted();
-  if (gs.player.hp <= 0) setTimeout(()=>UI_gameOver('HP về 0'), 400);
-}
+    var fleeRawFn = (typeof _raw !== 'undefined' && _raw.DW_flee) ? _raw.DW_flee
+                : (typeof window.DW_fleeRaw === 'function') ? window.DW_fleeRaw
+                : null;
+    if (!fleeRawFn) { _showLog('⚠ Engine flee unavailable', '#cc2200'); _arena.phase='idle'; return; }
 
-async function UI_doRest() {
-  const r = DW_rest();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
+    var result = fleeRawFn(state, {});
+    if (result.state) gs.setState(result.state);
 
-  if (r.hasEnemy) {
-    // Threat Round — zombie phản công
-    const dmg = r.totalDmg || 0;
-    const zc  = r.zombieCount || 0;
-    if (dmg > 0) {
-      showNotif(`💥 ${zc} zombie phản công — mất ${dmg} HP. SB hồi lại!`, 'danger');
+    var msg = (result.state && result.state.log && result.state.log[0]) || result.msg || 'Bỏ chạy...';
+
+    if (result.ok) {
+      // Thoát thành công — player lùi xanh
+      _arena.player.flashTimer = 10;
+      _arena.player.flashColor  = '#2255aa';
+      _showLog('🏃 ' + msg, '#4488cc');
+      setTimeout(hide, 900);
     } else {
-      showNotif('😮‍💨 Nghỉ — SB hồi. Zombie không trúng lần này.', 'warning');
-    }
-    if (gs?.player?.gameOver) {
-      showNotif('💀 GAME OVER — bị zombie hạ khi đang nghỉ!', 'danger');
-    }
-  } else {
-    // Nghỉ an toàn
-    const isSecondWind = r.msg && r.msg.includes('Second Wind');
-    if (isSecondWind) {
-      showNotif('⚡ SECOND WIND! ' + r.msg, 'success');
-      const apEl = document.getElementById('sr-ap-num');
-      if (apEl) { apEl.style.color='var(--amber)'; setTimeout(()=>apEl.style.color='',1500); }
-    } else {
-      showNotif('🛌 ' + r.msg, 'success');
-    }
-  }
-  UI_renderAll();
-}
+      // Flee thất bại — bị zombie đánh
+      var dmgTaken = result.dmgTaken || 0;
+      _arena.player.flashTimer = 16;
+      _arena.player.flashColor  = '#cc2200';
 
-async function UI_doSleep() {
-  const prevDay = gs?.time?.day || 1;
-  const r = DW_sleep();
-  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  const newDay = gs?.time?.day || (prevDay + 1);
-  showNotif(`🌅 Ngày ${newDay} bắt đầu. ĐHĐ hồi đầy.`, 'success');
-  UI_checkRadioTick(prevDay, newDay);
-  UI_renderAll();
-}
+      if (dmgTaken > 0) {
+        var pPos = _playerPixelPos();
+        _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
+          maxLife: 35, dmg: dmgTaken,
+        });
+      }
 
-function UI_doBarricade() {
-  const r = DW_barricade();
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  showNotif(`🧱 Barricade mức ${r.level}/5`,'success');
-  UI_renderAll();
-}
+      _updateHUD(result.state || state);
 
-function UI_useItem(idx) {
-  const r = DW_useItem(idx);
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  showNotif(r.msg,'success');
-  UI_renderAll();
-  if (activeTab==='equip') UI_renderEquipment();
-}
+      // Kiểm tra game over sau flee thất bại
+      if (result.state && result.state.gameOver) {
+        _showLog('💀 BỎ CHẠY THẤT BẠI — ' + msg, '#cc2200');
+        setTimeout(hide, 2000);
+        return;
+      }
 
-function UI_dropItem(idx) {
-  DW_dropItem(idx);
-  UI_renderAll();
-  if (activeTab==='equip') UI_renderEquipment();
-}
-
-// ── AI TILE DESCRIPTION ──────────────────────────────
-async function aiDescribeNewTile() {
-  const tile = DW_currentTile();
-  if (tile.desc) { UI_renderTilePanel(); return; }
-  UI_renderTilePanel(); // show loading state
-  await UI_aiDescribeTile(tile);
-  UI_renderTilePanel();
-  // Show cinematic popup on first visit
-  if (tile.desc && tile.desc !== 'Không khí nặng nề bao phủ nơi này.') {
-    UI_showNarrative(tile.desc, `📍 ${tile.name}`, 'Ghi chép khám phá');
-  }
-}
-
-async function UI_aiDescribeTile(tile) {
-  // Gọi qua Cloudflare Worker proxy — key được giữ server-side
-  try {
-    const tdef    = TILE_TYPES[tile.type] || {};
-    const zLabel  = tile.zombies===0?'không có zombie':tile.zombies<=2?'ít zombie':tile.zombies<=5?'nhiều zombie':'đầy zombie';
-    const prompt  = `Mô tả 2 câu ngắn về ${tile.name} (${tdef.name}) bỏ hoang trong thảm họa zombie. ${zLabel}. Tiếng Việt. Không đề cập số liệu.`;
-
-    const res = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: MODEL, max_tokens: 120,
-        system: 'Bạn là một engine mô tả cảnh cho game sinh tồn zombie. Chỉ viết 2 câu mô tả cảnh, không hơn.',
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    const d    = await res.json();
-    const desc = d.content?.[0]?.text?.trim() || 'Nơi này trống vắng và đầy ám khí.';
-
-    // Lưu desc vào raw state — DW_currentTile() trả về copy nên phải ghi thẳng vào gs._state
-    const s   = gs._state;
-    const key = `${s.x},${s.y}`;
-    if (s.tiles?.[key]) s.tiles[key] = { ...s.tiles[key], desc };
-    tile.desc = desc; // cập nhật object hiện tại để render ngay
-    DW_save();
-  } catch(e) {
-    tile.desc = 'Không khí nặng nề bao phủ nơi này.';
-  }
-}
-
-// ── EXHAUSTION / GAME OVER ───────────────────────────
-function UI_showExhausted() {
-  showNotif('⚠ Kiệt sức! ĐHĐ ngày mai -3. Stress tăng mạnh.','danger');
-}
-
-function UI_gameOver(reason) {
-  const _t = gs.time || { day: 1 };
-  const _s = gs.stats || { kills: 0, tilesExplored: 0 };
-  alert(`GAME OVER\n${reason}\nNgày sống sót: ${_t.day}\nKills: ${_s.kills}\nĐịa điểm: ${_s.tilesExplored}`);
-  DW_deleteSave();
-  location.reload();
-}
-
-// ── FLOATING FEEDBACK (replaces old notif) ────────────
-let _floatQueue = [];
-function showNotif(msg, type = '') {
-  const container = document.getElementById('float-container');
-  if (!container) return;
-  const el = document.createElement('div');
-  const cls = type === 'success' ? 'success' : type === 'danger' ? 'danger' : type === 'dmg' ? 'dmg' : 'info';
-  el.className = `float-msg ${cls}`;
-  el.textContent = msg;
-  container.appendChild(el);
-  setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 2700);
-}
-
-// ── RADIO SYSTEM ──────────────────────────────────────
-let _radioRumours = [];
-let _radioHasNew  = false;
-
-const RADIO_FALLBACKS = [
-  'Nghe nói ở phía bắc có một siêu thị chưa bị cướp phá.',
-  'Có người phát tín hiệu SOS từ khu bệnh viện. Nhưng không ai dám đến.',
-  'Trạm xăng cuối đường cao tốc vẫn còn nhiên liệu. Cẩn thận — chúng đang tập trung ở đó.',
-  'Chúng tôi tìm thấy một hầm trú ẩn gần cầu đường sắt. Mang theo thức ăn.',
-  'Quân đội đã rút khỏi thành phố. Đừng trông chờ vào họ nữa.',
-  'Nước từ sông không uống được. Lọc kỹ trước khi dùng.',
-  'Một đoàn người sống sót đang di chuyển về phía đông. Cẩn thận — họ không thân thiện.',
-];
-
-async function UI_fetchRadioRumour() {
-  const tile = DW_currentTile();
-  const s    = gs?._state;
-  if (!s) return;
-  const prompt = `Bạn là người phát sóng radio ẩn danh trong thảm họa zombie. Ngày ${s.day||1}. Khu vực: ${tile?.name||'thành phố'}. Tạo 1 tin đồn ngắn (1-2 câu) — có thể là thông tin, cảnh báo, hoặc manh mối về địa điểm. Tiếng Việt. Giọng khẩn cấp nhưng bình tĩnh.`;
-  try {
-    const res = await fetch(typeof PROXY_URL !== 'undefined' ? PROXY_URL : '', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ model: typeof MODEL !== 'undefined' ? MODEL : 'claude-haiku-4-5-20251001', max_tokens: 80,
-        system:'Bạn là người phát sóng radio trong game zombie survival. Chỉ nói 1-2 câu ngắn.',
-        messages:[{role:'user',content:prompt}] }),
-    });
-    const d = await res.json();
-    return d.content?.[0]?.text?.trim();
-  } catch(e) { return null; }
-}
-
-async function UI_openRadio() {
-  const overlay = document.getElementById('radio-popup-overlay');
-  const body    = document.getElementById('radio-popup-body');
-  overlay.classList.add('show');
-
-  const barHtml = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<3?' active':''}"></div>`).join('')}</div>`;
-  body.innerHTML = `<div class="radio-signal-line">${barHtml}<span>Đang quét tần số...</span></div>
-    <div class="radio-transmission" style="color:#444;font-style:italic">◌ Tìm kiếm tín hiệu...</div>
-    <div class="radio-footer"><button class="radio-action-btn" onclick="UI_closeRadio()">Đóng</button></div>`;
-
-  // ── Show active rumor if exists ──
-  const s = gs?._state;
-  const activeRumor = s?.activeRumor;
-  if (activeRumor && !activeRumor.resolved) {
-    const dx = Math.abs((activeRumor.targetX||0)-(s.x||0));
-    const dy = Math.abs((activeRumor.targetY||0)-(s.y||0));
-    const dist = dx+dy;
-    const distTxt = dist===0
-      ? `<span style="color:var(--green);font-weight:bold;font-size:11px">⭐ BẠN ĐANG Ở ĐÂY!</span>`
-      : dist<=2 ? `<span style="color:var(--amber);font-size:10px">🔥 Rất gần · ${dist} ô</span>`
-      : `<span style="color:#555;font-size:9px">Cách ${dist} ô · ${activeRumor.targetName||'???'}</span>`;
-    const barHtml4 = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<4?' active':''}"></div>`).join('')}</div>`;
-    body.innerHTML = `
-      <div class="radio-signal-line">${barHtml4}<span style="color:var(--amber)">TIN ĐỒN ĐANG THEO DÕI</span></div>
-      <div class="radio-transmission" style="border-left:3px solid var(--amber);padding-left:10px;margin:8px 0">${activeRumor.text}</div>
-      <div class="radio-rumor-target">
-        <span style="font-size:18px">${activeRumor.baitIcon||'📍'}</span>
-        <div style="flex:1">
-          <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#ddd;font-size:13px">${activeRumor.targetName||'Địa điểm bí ẩn'}</div>
-          ${distTxt}
-        </div>
-      </div>
-      <div class="radio-footer">
-        <button class="radio-action-btn" onclick="UI_closeRadio()">Đóng</button>
-        <button class="radio-action-btn" style="opacity:.5;font-size:8px" onclick="UI_closeRadio();if(gs._state)gs.setState({...gs._state,activeRumor:null});setTimeout(UI_openRadio,100)">Xóa tin đồn</button>
-      </div>`;
-    _radioHasNew = false; UI_updateRadioBtn();
-    return;
-  }
-
-  // ── Generate new rumor from engine ──
-  let rumorText = '';
-  let newRumor = null;
-  if (typeof DW_generateRumor === 'function' && gs) {
-    const r = DW_generateRumor();
-    if (r && r.ok) {
-      rumorText = r.msg || '';
-      newRumor = r.state?.activeRumor || null;
-      if (typeof gs.setState === 'function') gs.setState(r.state);
-      else if (gs._state) gs._state = r.state;
-      if (typeof DW_save === 'function') DW_save();
+      _showLog('⚠ ' + msg, '#cc6644');
+      _arena.phase = 'idle';  // reset phase để player có thể hành động tiếp
+      _updateButtons();
     }
   }
-  // AI fallback
-  if (!rumorText) {
-    const fallbacks = (typeof RADIO_FALLBACKS !== 'undefined') ? RADIO_FALLBACKS : ['📻 Tín hiệu yếu...'];
-    rumorText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    const ai = await UI_fetchRadioRumour();
-    if (ai) rumorText = ai;
-  }
 
-  _radioRumours.unshift({ text: rumorText, day: gs?.time?.day || 1 });
-  _radioHasNew = false;
-  UI_updateRadioBtn();
+  // ── THREAT ROUND (nút Nghỉ trong arena) ───────────────────────────
+  // Gọi DW_threatRound() từ engine-combat — tất cả zombie phản công 1 lần,
+  // player hồi 60% STM. Animation: flash đỏ player + hiển thị dmg từng zombie.
+  function _doThreatRound() {
+    var state = gs && gs._state;
+    if (!state) return;
+    if (_arena.phase !== 'idle') return;
 
-  const targetBlock = newRumor ? `
-    <div class="radio-rumor-target">
-      <span style="font-size:18px">${newRumor.baitIcon||'📍'}</span>
-      <div style="flex:1">
-        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#ddd;font-size:13px">${newRumor.targetName||'???'}</div>
-        <div style="font-family:var(--mono);font-size:8px;color:#555">📌 Đã đánh dấu bản đồ</div>
-      </div>
-    </div>` : '';
+    _arena.phase = 'enemy_attack';
 
-  const barHtml5 = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<4?' active':''}"></div>`).join('')}</div>`;
-  body.innerHTML = `
-    <div class="radio-signal-line">${barHtml5}<span>Tín hiệu nhận — Ngày ${gs?.time?.day||1}</span></div>
-    <div class="radio-transmission">${rumorText}</div>
-    ${targetBlock}
-    <div class="radio-footer">
-      <button class="radio-action-btn primary" onclick="UI_addStoryEntry('📻 Tin đồn: ${rumorText.replace(/'/g,'`').slice(0,40)}...','Radio');UI_closeRadio();UI_renderAll();showNotif('📍 Tin đồn đang theo dõi!','success')">📍 Theo dõi</button>
-      <button class="radio-action-btn" onclick="UI_closeRadio()">Bỏ qua</button>
-    </div>`;
-  UI_renderAll();
-}
-
-function UI_closeRadio(evt) {
-  if (evt && evt.target !== document.getElementById('radio-popup-overlay')) return;
-  document.getElementById('radio-popup-overlay').classList.remove('show');
-}
-
-function UI_updateRadioBtn() {
-  const btn = document.getElementById('radio-btn');
-  const lbl = document.getElementById('radio-label');
-  if (!btn || !lbl) return;
-  if (_radioHasNew) {
-    btn.classList.add('has-news');
-    lbl.textContent = 'TIN MỚI!';
-  } else {
-    btn.classList.remove('has-news');
-    lbl.textContent = 'RADIO';
-  }
-}
-
-// Tự động tạo radio rumour mỗi 3 ngày + trigger rumor từ engine
-function UI_checkRadioTick(prevDay, newDay) {
-  if (newDay > prevDay) {
-    // Every 3 days: trigger radio
-    if (newDay % 3 === 0) {
-      _radioHasNew = true;
-      UI_updateRadioBtn();
-      showNotif('📻 Radio có tín hiệu mới! Kiểm tra ngay.', 'info');
+    // Gọi engine
+    var threatFn = (typeof DW_threatRound === 'function') ? DW_threatRound : null;
+    if (!threatFn) {
+      // Fallback: không có engine function → chỉ hồi STM, không mất HP
+      var maxStm = (typeof DW_staminaMax === 'function') ? DW_staminaMax(state) : 10;
+      var newStm = Math.min(maxStm, Math.ceil(maxStm * 0.60));
+      var fallbackState = Object.assign({}, state, { stamina: newStm, maxStamina: maxStm, threatPressure: 0 });
+      gs.setState(fallbackState);
+      _showLog('😮‍💨 Nghỉ — SB hồi một phần.', '#7aaa7a');
+      _arena.phase = 'idle';
+      _updateButtons();
+      return;
     }
-    // Every 5 days: try generate rumor if none active
-    if (newDay % 5 === 0 && gs._state && !gs._state.activeRumor) {
-      if (typeof DW_generateRumor === 'function') {
-        const r = DW_generateRumor();
-        if (r && r.ok) {
-          showNotif(`📍 Tin đồn mới: ${(r.msg||'').slice(0,40)}...`, 'info');
-          UI_renderAll();
+
+    var result = threatFn(state);
+    if (result.state) gs.setState(result.state);
+
+    var dmgTaken  = result.totalDmg || 0;
+    var zCount    = result.zombieCount || 0;
+    var pPos      = _playerPixelPos();
+
+    if (dmgTaken > 0) {
+      // Animation: flash đỏ player + số dmg
+      _arena.player.flashTimer = 25;
+      _arena.player.flashColor = '#cc2200';
+      _addEffect('player_dmg_text', pPos.px, pPos.py - 10, {
+        maxLife: 40,
+        dmg: dmgTaken,
+      });
+
+      // Tất cả zombie sống chớp sáng (đang tấn công)
+      for (var i = 0; i < _arena.enemies.length; i++) {
+        if (!_arena.enemies[i].dead && _arena.enemies[i].hp > 0) {
+          _arena.enemies[i].flashTimer = 12;
+          _arena.enemies[i].flashColor = '#ff6600';
         }
       }
     }
+
+    setTimeout(function () {
+      var newState = result.state || state;
+
+      _updateHUD(newState);
+      _renderEnemyList(_arena.enemies);
+
+      if (dmgTaken > 0) {
+        var logColor = newState.gameOver ? '#cc2200' : '#ff8844';
+        _showLog(
+          zCount > 0
+            ? ('💥 ' + zCount + ' zombie phản công — mất ' + dmgTaken + ' HP. SB hồi lại!')
+            : '😮‍💨 Nghỉ an toàn — SB hồi đầy.',
+          logColor
+        );
+      } else {
+        _showLog('😮‍💨 Nghỉ an toàn — SB hồi đầy.', '#7aaa7a');
+      }
+
+      if (newState.gameOver) {
+        _showLog('💀 BẠN ĐÃ CHẾT. GAME OVER.', '#cc2200');
+        setTimeout(hide, 2000);
+        return;
+      }
+
+      _arena.phase = 'idle';
+      _updateButtons();
+    }, 300);
   }
-}
 
-// ── CINEMATIC NARRATIVE POPUP ─────────────────────────
-window._narrativeInterval = null;
+  // ── SHOW / HIDE ───────────────────────────────────
 
-function UI_showNarrative(text, speaker = 'Người lạ', source = 'Không rõ nguồn gốc') {
-  const overlay = document.getElementById('narrative-overlay');
-  if (!overlay) return;
-  // Fix 6: chỉ 1 popup — clear interval cũ trước khi mở mới
-  clearInterval(window._narrativeInterval);
-  window._narrativeInterval = null;
+  var _onHideCallback = null;
 
-  document.getElementById('narrative-speaker-name').textContent = speaker;
-  document.getElementById('narrative-source').textContent = `— ${source}`;
-
-  const textEl = document.getElementById('narrative-text');
-  if (text === '...') {
-    textEl.textContent = '...';
-    textEl.style.opacity = '0.4';
-  } else {
-    textEl.style.opacity = '1';
-    textEl.textContent = '';
-    // Fix 1: lưu intervalId để có thể clear khi đóng
-    let i = 0;
-    window._narrativeInterval = setInterval(() => {
-      if (i < text.length) { textEl.textContent += text[i]; i++; }
-      else { clearInterval(window._narrativeInterval); window._narrativeInterval = null; }
-    }, 16);
-  }
-
-  overlay.classList.add('show');
-}
-
-function UI_closeNarrative(evt) {
-  const overlay = document.getElementById('narrative-overlay');
-  if (!overlay) return;
-  if (evt && evt.target !== overlay) return;
-  // Fix 1: dọn dẹp typing khi đóng giữa chừng
-  clearInterval(window._narrativeInterval);
-  window._narrativeInterval = null;
-  overlay.classList.remove('show');
-}
-
-// ── INTRO ─────────────────────────────────────────────
-function showIntro(msg) {
-  const ov = document.getElementById('intro-overlay');
-  document.getElementById('intro-msg').textContent = msg;
-  ov.style.display = 'flex';
-}
-function hideIntro() {
-  document.getElementById('intro-overlay').style.display = 'none';
-}
-
-// ══════════════════════════════════════════════════════
-// COMBAT OVERLAY SYSTEM v2
-// Fix: enemy HP visible + số, zombie phản công rõ,
-//      XP bar + popup, enemy types UI, flee damage chance
-// Pure UI — zero engine changes
-// ══════════════════════════════════════════════════════
-
-// ── ENEMY TYPE DEFINITIONS (UI only, detect từ obj.label) ──
-const _CBT_TYPES = {
-  screamer:{
-    badge:'SCREAMER', cls:'screamer',
-    warn:'⚠ Chưa diệt sau 2 lượt → gọi thêm zombie!',
-    intents:['Hú lớn — gọi đồng loại!','Lao thẳng vào!','Đang hú...','Phát tín hiệu nguy hiểm!'],
-  },
-  armored:{
-    badge:'CÓ GIÁP', cls:'armored',
-    warn:'⚠ Giảm dmg chém. Dùng Đòn Mạnh hoặc Nhắm Kỹ!',
-    intents:['Chắn đòn...','Tiến chậm rãi...','Giáp hấp thụ!','Phản công nặng!'],
-  },
-  crawler:{
-    badge:'CRAWLER', cls:'crawler',
-    warn:'⚠ Tốc độ cao — bỏ chạy nguy hiểm hơn!',
-    intents:['Lao tới cực nhanh!','Bò sát đất...','Chớp nhoáng!','Tiếp cận từ dưới!'],
-  },
-  horde:{
-    badge:'BẦY ĐÀN', cls:'horde',
-    warn:'⚠ Bầy đàn — dmg cộng dồn mỗi lượt không diệt!',
-    intents:['Ồ ạt tấn công!','Bao vây!','Cắn liên tục!','Không có đường thoát...'],
-  },
-  normal:{
-    badge:'ZOMBIE', cls:'normal',
-    warn:'',
-    intents:['Tấn công thường...','Lao vào cắn!','Tiếp cận chậm...','Chuẩn bị đòn mạnh...','Rú lên!'],
-  },
-};
-
-function _CBT_detectType(obj) {
-  if (!obj) return 'normal';
-  const lbl = (obj.label||'').toLowerCase();
-  if (obj.isHorde || lbl.includes('bầy') || lbl.includes('horde')) return 'horde';
-  if (lbl.includes('screamer') || lbl.includes('hú') || lbl.includes('la hét')) return 'screamer';
-  if (lbl.includes('armored') || lbl.includes('giáp')) return 'armored';
-  if (lbl.includes('crawler') || lbl.includes('bò')) return 'crawler';
-  return 'normal';
-}
-
-let _cbtState = null;
-// { objIdx, isBoss, bossEntryIdx, combatAp, maxCombatAp,
-//   defending, round, enemyType,
-//   enemyHpStart, enemyMaxHp,
-//   xpAtOpen, xpEarned }
-
-function UI_openCombat(objIdx) {
-  // ── Route to DWArena pixel art combat ────────────
-  if (typeof DWArena !== 'undefined') {
-    const state = gs._state;
+  function show(state, hintObjIdx) {
+    _createDOM();
     if (!state) return;
-    // DWArena.show() handles all enemies in current tile — objIdx is just a hint
-    // Optionally pre-select the specific enemy
-    DWArena.show(state, objIdx);
-    // After arena closes, re-render to reflect combat results
-    return;
+    _visible = true;
+
+    // Lấy enemies từ tile hiện tại
+    var tileKey = state.x + ',' + state.y;
+    var tile    = state.tiles && state.tiles[tileKey];
+    var rawEnemies = [];
+
+    if (tile && tile.objects) {
+      rawEnemies = tile.objects.filter(function (o) {
+        // Look up def by type
+        var def = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[o.type] : null;
+        if (def && def.type === 'enemy') return true;
+        // Fallback: check obj.type starts with zombie/enemy
+        if (o.type && (o.type.indexOf('zombie') >= 0 || o.type.indexOf('enemy') >= 0)) return true;
+        return false;
+      }).filter(function(o) {
+        return o.alive !== false; // chỉ enemy còn sống
+      });
+    }
+
+    // Pre-select hint enemy if provided
+    var hintObjId = null;
+    if (typeof hintObjIdx === 'number' && tile && tile.objects) {
+      var hintObj = tile.objects[hintObjIdx];
+      if (hintObj) hintObjId = hintObj.id;
+    }
+
+    // Boss
+    var boss = state.activeBosses && state.activeBosses[tileKey];
+
+    // Xây dựng arena enemies
+    _arena.enemies = [];
+    var totalCount = rawEnemies.length + (boss ? 1 : 0);
+
+    if (boss) {
+      var bDef = (typeof BOSS_DEFS !== 'undefined') ? (BOSS_DEFS[boss.id] || {}) : {};
+      var bPos = _enemyPixelPos(0, totalCount);
+      _arena.enemies.push({
+        id:      'boss_' + boss.id,
+        type:    boss.id,
+        hp:      boss.hp    || bDef.hp    || 30,
+        maxHp:   bDef.maxHp || bDef.hp    || 30,
+        px:      bPos.px,
+        py:      bPos.py,
+        dead:    false,
+        flashTimer: 0,
+        selected:   false,
+        isBoss:     true,
+        bossName:   bDef.name || 'BOSS',
+      });
+    }
+
+    for (var i = 0; i < rawEnemies.length; i++) {
+      var re    = rawEnemies[i];
+      var reDef = (typeof OBJECT_DEFS !== 'undefined') ? (OBJECT_DEFS[re.type] || {}) : {};
+      var offset = boss ? i + 1 : i;
+      var rPos  = _enemyPixelPos(offset, totalCount);
+      _arena.enemies.push({
+        id:      re.id,
+        type:    re.type,
+        // Khớp với engine-combat: objMaxHp = objDef.maxHp || objDef.hp || 5
+        hp:      re.hp    != null ? re.hp    : (reDef.maxHp || reDef.hp || 5),
+        maxHp:   re.maxHp != null ? re.maxHp : (reDef.maxHp || reDef.hp || 5),
+        px:      rPos.px,
+        py:      rPos.py,
+        dead:    false,
+        flashTimer: 0,
+        selected:   false,
+        isBoss:     false,
+      });
+    }
+
+    // Player position
+    var pPos = _playerPixelPos();
+    _arena.player.px         = pPos.px;
+    _arena.player.py         = pPos.py;
+    _arena.player.flashTimer = 0;
+
+    // Reset
+    _arena.effects  = [];
+    _arena.phase    = 'idle';
+    _selectedEnemyObjId = null;
+
+    // UI
+    _overlay.classList.add('active');
+    _updateHUD(state);
+    _renderEnemyList(_arena.enemies);
+    _updateButtons();
+
+    // Auto-select hint enemy or first available
+    if (hintObjId) {
+      _selectEnemy(hintObjId);
+    } else if (_arena.enemies.length > 0) {
+      _selectEnemy(_arena.enemies[0].id);
+    }
+    _showLog('⚠ Chọn mục tiêu và tấn công!');
+
+    // Start render loop
+    if (_raf) cancelAnimationFrame(_raf);
+    _raf = requestAnimationFrame(_render);
   }
 
-  // ── Fallback: old overlay combat ─────────────────
-  const tile = DW_currentTile();
-  const obj  = tile?.objects?.[objIdx];
-  if (!obj) return;
+  function hide() {
+    _visible = false;
+    if (_raf) {
+      cancelAnimationFrame(_raf);
+      _raf = null;
+    }
+    if (_overlay) _overlay.classList.remove('active');
+    _selectedEnemyObjId = null;
+    // Reset combat-session flags (role skills có dùng 1 lần/combat)
+    var s = gs && gs._state;
+    if (s) {
+      var ns = { ...s };
+      var dirty = false;
+      if (ns.policeWarnUsed)  { ns.policeWarnUsed  = false; dirty = true; }
+      if (ns.mechRepairUsed)  { ns.mechRepairUsed  = false; dirty = true; }
+      if (ns.combatCounterUsed) { ns.combatCounterUsed = 0; dirty = true; }
+      if (dirty && typeof gs.setState === 'function') gs.setState(ns);
+    }
+    // Sync game world UI after combat
+    if (typeof UI_renderAll === 'function') {
+      setTimeout(UI_renderAll, 50);
+    }
+  }
 
-  const p       = gs.player;
-  const isBoss  = !!obj.isBoss;
-  const bossEntry = isBoss ? (gs.activeBosses||[])[obj.bossEntryIdx] : null;
-  const bdef    = bossEntry ? BOSS_DEFS[bossEntry.bossId] : null;
-  const maxCap  = isBoss ? 16 : 12;
-  // Dùng STAMINA thay AP cho combat — đây là pool chiến đấu ngắn hạn
-  const maxStm  = (typeof DW_staminaMax === 'function') ? DW_staminaMax(p) : (p.maxStamina || 10);
-  const combatAp= Math.min(p.stamina ?? maxStm, maxStm); // combatAp thực ra là stamina
-  const eType   = isBoss ? 'normal' : _CBT_detectType(obj);
-  const tDef    = _CBT_TYPES[eType] || _CBT_TYPES.normal;
+  // Hook tích hợp: ghi đè gs.fight để tự mở arena
+  function installHook() {
+    // Gọi sau khi gs đã khởi tạo
+    // Thêm DWArena.openForCurrentTile() vào UI trigger
+    // (UI gọi DWArena.openForCurrentTile() thay vì gọi trực tiếp DW_fight)
+  }
 
-  // Snapshot HP — engine lưu obj.hp, boss lưu bossEntry.hp
-  const eHpNow = isBoss ? (bossEntry?.hp ?? bdef?.maxHp ?? 100)
-                        : (obj.hp ?? obj.maxHp ?? 3);
-  const eHpMax = isBoss ? (bdef?.maxHp ?? 100)
-                        : (obj.maxHp ?? obj.hp ?? 3);
+  // Mở arena cho tile hiện tại
+  function openForCurrentTile() {
+    var state = gs && gs._state;
+    if (!state) return;
+    var tileKey = state.x + ',' + state.y;
+    var tile = state.tiles && state.tiles[tileKey];
+    var hasEnemy = tile && tile.objects && tile.objects.some(function (o) {
+      var def = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS[o.type] : null;
+      return def && def.type === 'enemy';
+    });
+    var hasBoss = state.activeBosses && state.activeBosses[tileKey];
 
-  _cbtState = {
-    objIdx, isBoss,
-    bossEntryIdx: obj.bossEntryIdx ?? -1,
-    combatAp, maxCombatAp: combatAp,
-    defending: false, round: 1,
-    fleeDir: (DW_getExits()||[])[0]?.id || 'n',
-    enemyType: eType,
-    enemyHpStart: eHpNow,
-    enemyMaxHp: Math.max(eHpMax, eHpNow),
-    xpAtOpen: p.charXp ?? gs._state?.charXp ?? 0,
-    xpEarned: 0,
-    prevPlayerHp: p.hp,
+    if (hasEnemy || hasBoss) {
+      show(state);
+    }
+  }
+
+  // ── PUBLIC ────────────────────────────────────────
+  return {
+    show:               show,
+    hide:               hide,
+    openForCurrentTile: openForCurrentTile,
+    installHook:        installHook,
   };
 
-  // ── Enemy bar ──
-  const eName = isBoss ? (bdef?.name || obj.label || 'Boss') : (obj.label || 'Zombie');
-  const eIcon = isBoss ? (bdef?.icon || '☠') : (obj.icon || '🧟');
-  _cbt$('cbt-enemy-icon').textContent = eIcon;
-  _cbt$('cbt-enemy-name').textContent = eName;
-  _cbt$('cbt-enemy-meta').textContent = isBoss
-    ? `BOSS · DC${bdef?.dc||12} · ${bdef?.damage||3} dmg/lượt`
-    : `HP: ${eHpNow}/${eHpMax} · Dmg ${obj.damage||1}/lượt`;
-
-  // Type badge
-  const badgeEl = _cbt$('cbt-type-badge');
-  badgeEl.textContent = isBoss ? 'BOSS' : tDef.badge;
-  badgeEl.className = `cbt-type-badge ${isBoss ? 'horde' : tDef.cls}`;
-
-  // Type warning
-  const warnEl = _cbt$('cbt-type-warn');
-  if (!isBoss && tDef.warn) { warnEl.textContent = tDef.warn; warnEl.classList.add('show'); }
-  else warnEl.classList.remove('show');
-
-  // Boss phase bar
-  const phaseEl = _cbt$('cbt-boss-phase');
-  if (isBoss && bossEntry) {
-    const phase = bossEntry.hp > bdef.maxHp*.6 ? 1 : bossEntry.hp > bdef.maxHp*.25 ? 2 : 3;
-    phaseEl.style.cssText = `display:block;color:${['','var(--green)','var(--amber)','var(--blood-bright)'][phase]}`;
-    phaseEl.textContent = `PHASE ${phase} · ${bossEntry.hp}/${bdef.maxHp} HP · ${['','Ổn định','Điên cuồng','⚠ Tuyệt vọng'][phase]}`;
-  } else phaseEl.style.display = 'none';
-
-  // Stealth button
-  _cbt$('cbt-btn-stealth').style.display = (p.skills?.sneak >= 2 && !obj.isHorde && !isBoss) ? '' : 'none';
-
-  // AP costs
-  _cbt$('cbt-cost-quick').textContent   = isBoss ? '-3 ĐHĐ' : '-2 ĐHĐ';
-  _cbt$('cbt-cost-heavy').textContent   = isBoss ? '-5 ĐHĐ' : '-4 ĐHĐ';
-  _cbt$('cbt-cost-precise').textContent = '-3 ĐHĐ';
-  _cbt$('cbt-cost-stealth').textContent = '-3 ĐHĐ';
-
-  // Reset log
-  _cbt$('cbt-log').innerHTML = `<div class="cbt-log-entry info">// Gặp ${eName}${eType!=='normal'?' ['+tDef.badge+']':''}! HP: ${eHpNow}. SB: ${combatAp}/${combatAp}.</div>`;
-
-  // Hide loot popup
-  _cbt$('cbt-kill-popup').classList.remove('show');
-
-  _CBT_showEnemyIntent();
-  _CBT_updateUI();
-  _cbt$('combat-overlay').classList.add('show');
-}
-
-// Helper querySelector shortcut
-function _cbt$(id){ return document.getElementById(id); }
-
-function _CBT_showEnemyIntent() {
-  if (!_cbtState) return;
-  const tDef   = _CBT_TYPES[_cbtState.enemyType] || _CBT_TYPES.normal;
-  const intent = tDef.intents[Math.floor(Math.random() * tDef.intents.length)];
-  _cbt$('cbt-intent-text').textContent = intent;
-  // Hiện từ round 1 nếu enemy type nguy hiểm, round 2+ nếu normal
-  const showFrom = _cbtState.enemyType === 'normal' ? 2 : 1;
-  _cbt$('cbt-intent').classList.toggle('show', _cbtState.round >= showFrom);
-}
-
-function _CBT_updateUI() {
-  if (!_cbtState) return;
-  // Đọc STAMINA live từ gs.player (thay vì _cbtState.combatAp lỗi thời)
-  const maxStm     = (typeof DW_staminaMax === 'function') ? DW_staminaMax(p) : (p.maxStamina || 10);
-  const combatAp   = p.stamina ?? maxStm;
-  const maxCombatAp = maxStm;
-  // Sync vào _cbtState để các check sau dùng đúng giá trị
-  if (_cbtState) { _cbtState.combatAp = combatAp; _cbtState.maxCombatAp = maxCombatAp; }
-  const { isBoss } = _cbtState;
-  const p = gs.player;
-
-  // STAMINA dots (⚔ SB) — đỏ thay vì vàng
-  let dots = '';
-  for (let i = 0; i < maxCombatAp; i++)
-    dots += `<div class="cbt-ap-dot${i >= combatAp ? ' spent' : ''}" style="${i < combatAp ? 'background:linear-gradient(135deg,#c03030,#e05050);' : ''}"></div>`;
-  _cbt$('cbt-ap-dots').innerHTML = dots;
-  _cbt$('cbt-ap-budget-num').textContent = `${combatAp}/${maxCombatAp}`;
-
-  // Button disable
-  const qC = isBoss ? 3 : 2, hC = isBoss ? 5 : 4;
-  _cbt$('cbt-btn-quick').disabled   = combatAp < qC;
-  _cbt$('cbt-btn-heavy').disabled   = combatAp < hC;
-  _cbt$('cbt-btn-defend').disabled  = combatAp < 1;
-  _cbt$('cbt-btn-precise').disabled = combatAp < 3;
-  _cbt$('cbt-btn-stealth').disabled = combatAp < 3;
-  _cbt$('cbt-btn-flee').disabled    = combatAp < 1;
-
-  // ── Player HP bar ──
-  const hpPct = Math.max(0, p.hp / p.maxHp * 100).toFixed(1);
-  const hpCls = p.hp > p.maxHp*.6 ? 'ok' : p.hp > p.maxHp*.3 ? 'warn' : 'crit';
-  _cbt$('cbt-player-hp-fill').style.width = hpPct + '%';
-  _cbt$('cbt-player-hp-fill').className = 'cbt-player-hp-fill ' + hpCls;
-  _cbt$('cbt-player-hp-num').textContent = p.hp.toFixed(1);
-
-  // ── Enemy HP bar — đọc live từ engine state ──
-  const tile = DW_currentTile();
-  let eHpCur = _cbtState.enemyHpStart;
-  if (isBoss) {
-    const bEntry = (gs.activeBosses||[])[_cbtState.bossEntryIdx];
-    if (bEntry) {
-      eHpCur = bEntry.hp;
-      const bdef  = BOSS_DEFS[bEntry.bossId];
-      const phase = bEntry.hp > bdef.maxHp*.6 ? 1 : bEntry.hp > bdef.maxHp*.25 ? 2 : 3;
-      const pEl   = _cbt$('cbt-boss-phase');
-      pEl.style.color = ['','var(--green)','var(--amber)','var(--blood-bright)'][phase];
-      pEl.textContent = `PHASE ${phase} · ${bEntry.hp}/${bdef.maxHp} HP`;
-    }
-  } else {
-    const obj = tile?.objects?.[_cbtState.objIdx];
-    if (obj) eHpCur = obj.hp ?? _cbtState.enemyHpStart;
-  }
-  const eHpMax = _cbtState.enemyMaxHp;
-  const eHpPct = Math.max(0, eHpCur / eHpMax * 100).toFixed(1);
-  _cbt$('cbt-enemy-hp-fill').style.width = eHpPct + '%';
-  _cbt$('cbt-enemy-hp-num').textContent  = `${Math.max(0,Math.round(eHpCur))}/${Math.round(eHpMax)}`;
-
-  // ── XP bar — đọc từ charXp/xpProgress (engine-skills.js) ──
-  const xpNow    = p.charXp    ?? gs._state?.charXp    ?? 0;
-  const xpNeeded = p.xpToNext  ?? gs._state?.xpToNext  ?? 120;
-  const xpPct    = p.xpProgress != null
-    ? (p.xpProgress * 100).toFixed(1)
-    : Math.min(100, xpNow / Math.max(1, xpNeeded) * 100).toFixed(1);
-  _cbt$('cbt-xp-fill').style.width = xpPct + '%';
-  _cbt$('cbt-xp-num').textContent  = `${xpNow}/${xpNeeded}`;
-
-  // Flee cost
-  const exits = DW_getExits() || [];
-  const fleeCost = Math.max(1, (exits[0]?.cost || 2) - 1);
-  _cbt$('cbt-flee-cost').textContent = `-${fleeCost} ĐHĐ`;
-}
-
-function _CBT_addLog(msg, type='info') {
-  const log = _cbt$('cbt-log');
-  const el  = document.createElement('div');
-  el.className   = 'cbt-log-entry ' + type;
-  el.textContent = msg;
-  log.insertBefore(el, log.firstChild);
-  while (log.children.length > 10) log.removeChild(log.lastChild);
-}
-
-// Flash enemy HP track khi bị hit
-function _CBT_flashEnemyHit() {
-  const track = _cbt$('cbt-enemy-hp-track');
-  if (!track) return;
-  track.classList.remove('flash');
-  void track.offsetWidth; // reflow
-  track.classList.add('flash');
-  setTimeout(() => track.classList.remove('flash'), 420);
-}
-
-// Shake player bar khi nhận damage
-function _CBT_shakePlayerBar() {
-  const bar = _cbt$('cbt-player-bar');
-  if (!bar) return;
-  bar.classList.remove('dmg');
-  void bar.offsetWidth;
-  bar.classList.add('dmg');
-  setTimeout(() => bar.classList.remove('dmg'), 240);
-}
-
-// XP gain floating text
-function _CBT_showXpGain(amount) {
-  if (!amount || amount <= 0) return;
-  const row = _cbt$('cbt-xp-row');
-  if (!row) return;
-  const el = document.createElement('div');
-  el.className   = 'cbt-xp-gain';
-  el.textContent = `+${amount} XP`;
-  row.appendChild(el);
-  setTimeout(() => el.parentNode && el.parentNode.removeChild(el), 1500);
-}
-
-function CBT_action(mode) {
-  if (!_cbtState) return;
-  const { isBoss, objIdx, bossEntryIdx } = _cbtState;
-  const costs = { quick:isBoss?3:2, heavy:isBoss?5:4, defend:1, precise:3, stealth:3 };
-  const cost  = costs[mode] || 2;
-
-  if (_cbtState.combatAp < cost) {
-    _CBT_addLog('Hết sức bền! Nhấn Nghỉ để hồi SB hoặc Thoát.', 'miss');
-    return;
-  }
-
-  const prevPlayerHp = gs.player.hp;
-  _cbtState.combatAp -= cost;
-
-  // Gọi engine
-  let r;
-  if (isBoss) {
-    r = DW_fightBoss(bossEntryIdx, mode === 'heavy' ? 'heavy' : 'normal');
-  } else {
-    const modeMap = { quick:'normal', heavy:'heavy', defend:'normal', precise:'normal', stealth:'stealth' };
-    r = DW_fight(objIdx, modeMap[mode] || 'normal');
-  }
-
-  if (!r?.ok) {
-    _CBT_addLog(r?.msg || 'Hành động thất bại.', 'miss');
-    _CBT_updateUI();
-    return;
-  }
-
-  // ── Parse outcome ──
-  const outcome    = r.outcome || (r.hit ? 'success' : 'miss');
-  const newPlayerHp= gs.player.hp;
-  const tookDmg    = newPlayerHp < prevPlayerHp - 0.05;
-  const dmgTaken   = Math.max(0, prevPlayerHp - newPlayerHp).toFixed(1);
-  const enemyDmg   = r.bossDmg || r.dmg || 0;
-
-  let logMsg = '', logType = 'info';
-
-  if (mode === 'defend') {
-    _cbtState.defending = true;
-    logMsg  = '🛡 Phòng thủ — giảm 50% dmg lượt này.';
-    logType = 'info';
-  } else if (outcome === 'nat20') {
-    logMsg  = `🎯 NAT20! Hạ ngay! Gây ${enemyDmg} dmg. [D20:20]`;
-    logType = 'kill';
-    _CBT_flashEnemyHit();
-  } else if (outcome === 'success' || r.hit) {
-    logMsg  = `⚔ Trúng! Gây ${enemyDmg} dmg lên zombie. [D20:${r.roll||'?'}]`;
-    logType = 'hit';
-    _CBT_flashEnemyHit();
-  } else if (outcome === 'nat1') {
-    logMsg  = `💀 NAT1 Thảm họa! Mất ${dmgTaken} HP. [D20:1]`;
-    logType = 'miss';
-  } else {
-    logMsg  = `✗ Trượt! [D20:${r.roll||'?'}]`;
-    logType = 'miss';
-  }
-  _CBT_addLog(logMsg, logType);
-
-  // ── Zombie phản công log (tách dòng riêng, rõ ràng) ──
-  if (tookDmg && mode !== 'defend') {
-    _CBT_addLog(`🩸 Zombie tấn công lại — bạn mất ${dmgTaken} HP! (còn ${newPlayerHp.toFixed(1)} HP)`, 'miss');
-    _CBT_shakePlayerBar();
-  } else if (!tookDmg && outcome !== 'nat20' && mode !== 'defend') {
-    _CBT_addLog(`🧟 Zombie tấn công nhưng trượt bạn. HP: ${newPlayerHp.toFixed(1)}`, 'info');
-  }
-
-  // ── XP gain — đọc charXp (engine-skills.js DW_grantCharacterXp) ──
-  const xpNow    = gs.player.charXp ?? gs._state?.charXp ?? 0;
-  const xpBefore = _cbtState.xpAtOpen + _cbtState.xpEarned;
-  const xpGained = Math.max(0, xpNow - xpBefore);
-  if (xpGained > 0) {
-    _cbtState.xpEarned += xpGained;
-    _CBT_showXpGain(xpGained);
-  }
-
-  // Screamer special: warn round 2
-  if (_cbtState.enemyType === 'screamer' && _cbtState.round === 2) {
-    _CBT_addLog('⚠ SCREAMER chưa chết — có thể gọi thêm zombie sau!', 'miss');
-  }
-
-  _cbtState.round++;
-  _CBT_showEnemyIntent();
-  _CBT_updateUI();
-  UI_renderHeader();
-
-  // ── Enemy dead? ──
-  const tile = DW_currentTile();
-  const obj  = !isBoss ? tile?.objects?.[objIdx] : null;
-  const bEntry = isBoss ? (gs.activeBosses||[])[bossEntryIdx] : null;
-  const enemyDead = isBoss
-    ? (r.bossDefeated || (bEntry && bEntry.hp <= 0))
-    : (!obj || !obj.alive || r.enemyDead || (obj.hp != null && obj.hp <= 0));
-
-  if (enemyDead) {
-    _CBT_addLog(`💀 ${isBoss ? 'BOSS' : 'Zombie'} đã bị tiêu diệt!`, 'kill');
-    setTimeout(() => _CBT_showKillPopup(r, isBoss), 300);
-    return;
-  }
-
-  // ── Player dead? ──
-  if (gs.player.hp <= 0) {
-    _cbt$('combat-overlay').classList.remove('show');
-    _cbtState = null;
-    setTimeout(() => UI_gameOver('Tử trận trong chiến đấu.'), 400);
-    return;
-  }
-
-  // ── Out of AP ──
-  if (_cbtState.combatAp <= 0) {
-    _CBT_addLog('⚡ Hết ĐHĐ — rút lui tự động.', 'info');
-    _CBT_endCombat(true);
-  }
-}
-
-// ── Kill / Loot popup ──
-function _CBT_showKillPopup(r, isBoss) {
-  const xpGained = _cbtState?.xpEarned || (isBoss ? 150 : 8);
-  _cbt$('cbt-kill-title').textContent = isBoss ? '🏆 BOSS HẠ GỤC!' : '☠ HẠ GỤC!';
-  _cbt$('cbt-kill-xp').textContent    = `+${xpGained} XP`;
-  _CBT_showXpGain(xpGained);
-
-  const lootItems = r?.loot || r?.items || [];
-  const lootEl    = _cbt$('cbt-kill-loot');
-  if (lootItems.length) {
-    lootEl.innerHTML = lootItems.map(id => {
-      const def = (typeof ITEM_DB !== 'undefined' && ITEM_DB[id]) || { name: id, icon: '📦' };
-      return `<div class="cbt-kill-item">
-        <div class="cbt-kill-item-icon">${def.icon||'📦'}</div>
-        <div class="cbt-kill-item-name">${def.name||id}</div>
-      </div>`;
-    }).join('');
-  } else {
-    lootEl.innerHTML = '<div class="cbt-kill-empty">// Không rơi vật phẩm //</div>';
-  }
-
-  _cbt$('cbt-kill-popup').classList.add('show');
-}
-
-function CBT_closeLoot() {
-  _cbt$('cbt-kill-popup').classList.remove('show');
-  const wasBoss = _cbtState?.isBoss;
-  _cbt$('combat-overlay').classList.remove('show');
-  _cbtState = null;
-  UI_renderAll();
-  showNotif(wasBoss ? '🏆 Boss bị tiêu diệt!' : '✅ Kẻ thù hạ gục!', 'success');
-}
-
-// ── Flee — có chance bị cắn, AI kể chuyện ──
-async function CBT_flee() {
-  if (!_cbtState) return;
-  const exits    = DW_getExits() || [];
-  const dir      = exits[0]?.id || 'n';
-  const eType    = _cbtState.enemyType;
-
-  // Flee damage chance: 35% base, +25% crawler, +15% horde
-  let dmgChance = 0.35;
-  if (eType === 'crawler') dmgChance = 0.60;
-  if (eType === 'horde')   dmgChance = 0.50;
-  if (_cbtState.defending) dmgChance = Math.max(0.1, dmgChance - 0.15);
-
-  const caughtByBite = Math.random() < dmgChance;
-
-  const r = DW_flee(dir);
-  _cbt$('combat-overlay').classList.remove('show');
-  const savedState = { ..._cbtState };
-  _cbtState = null;
-
-  if (!r?.ok) {
-    showNotif(r?.msg || 'Không thể bỏ chạy!', 'danger');
-    UI_renderAll();
-    return;
-  }
-
-  if (caughtByBite) {
-    // Ưu tiên dùng dmgTaken từ engine (DW_flee đã xử lý rồi).
-    // Nếu engine chưa trả về dmgTaken → tự tính và sync vào state đúng cách.
-    const engineDmg = typeof r?.dmgTaken === 'number' ? r.dmgTaken : -1;
-    if (engineDmg < 0) {
-      // Engine chưa handle bite → tự apply, sync qua gs._state immutable
-      const biteDmg = parseFloat((0.5 + Math.random() * 2).toFixed(1));
-      if (gs._state) {
-        const ns = {
-          ...gs._state,
-          hp:  Math.max(0.1, (gs._state.hp || gs.player.hp) - biteDmg),
-          log: [`🏃 Bỏ chạy — bị cắn khi tháo lui! -${biteDmg} HP`, ...(gs._state.log||[])],
-        };
-        gs.setState(ns);
-        if (typeof DW_save === 'function') DW_save(gs._state);
-      }
-      UI_renderAll();
-      showNotif(`🏃 Tháo lui — nhưng bị cắn! -${biteDmg} HP`, 'danger');
-    } else {
-      // Engine đã apply damage → chỉ cần notify
-      UI_renderAll();
-      const actualDmg = engineDmg > 0 ? ` -${engineDmg.toFixed(1)} HP` : '';
-      showNotif(`🏃 Tháo lui thất bại — bị cắn!${actualDmg}`, 'danger');
-    }
-
-    // AI kể chuyện bỏ chạy bị thương
-    const tile    = DW_currentTile();
-    const tileName= tile?.name || 'khu vực nguy hiểm';
-    const prompt  = `Nhân vật vừa bỏ chạy khỏi zombie tại ${tileName} và bị cắn vào tay khi tháo lui. Mô tả khoảnh khắc đó trong 2 câu ngắn, tiếng Việt, giọng khẩn cấp và hơi đau đớn.`;
-    try {
-      const res = await fetch(typeof PROXY_URL !== 'undefined' ? PROXY_URL : '', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model: typeof MODEL !== 'undefined' ? MODEL : 'claude-haiku-4-5-20251001',
-          max_tokens: 80,
-          system: 'Bạn là engine mô tả game zombie. Chỉ viết đúng 2 câu, không hơn.',
-          messages: [{ role:'user', content: prompt }],
-        }),
-      });
-      const d = await res.json();
-      const txt = d.content?.[0]?.text?.trim() || '';
-      if (txt) UI_showNarrative(txt, '🏃 Bỏ chạy', `Ngày ${gs?._state?.day||1}`);
-    } catch(e) {
-      UI_showNarrative(`Bạn vùng chạy trong hốt hoảng — một hàm răng lướt qua tay khi bạn thoát ra. Vết thương không sâu nhưng tim vẫn đập thình thịch.`, '🏃 Bỏ chạy', '');
-    }
-  } else {
-    UI_renderAll();
-    showNotif('🏃 Bỏ chạy thành công!', 'success');
-    if (typeof aiDescribeNewTile === 'function') aiDescribeNewTile();
-  }
-
-  if (gs.player.hp <= 0) setTimeout(() => UI_gameOver('Tử vong khi bỏ chạy.'), 400);
-}
-
-function _CBT_endCombat(autoFlee = false) {
-  if (!_cbtState) return;
-  _cbt$('combat-overlay').classList.remove('show');
-  _cbtState = null;
-  UI_renderAll();
-  if (autoFlee) showNotif('⚡ Kiệt sức — rút lui tự động.', 'danger');
-}
-
-// ── Override UI_openObjectPopup → dùng combat overlay cho enemy ──
-const _orig_UI_openObjectPopup = UI_openObjectPopup;
-function UI_openObjectPopup(objIdx) {
-  const tile = DW_currentTile();
-  const obj  = tile?.objects?.[objIdx];
-  if (obj) {
-    const _cat = ((typeof OBJECT_DEFS!=='undefined') ? OBJECT_DEFS[obj.type]?.type : null) || obj.type;
-    if (_cat === 'enemy' && obj.alive !== false) { UI_openCombat(objIdx); return; }
-  }
-  _orig_UI_openObjectPopup(objIdx);
-}
-
-// ── UTILS ──────────────────────────────────────────────
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-
-</script>
-</body>
-</html>
+})();
