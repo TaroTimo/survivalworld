@@ -534,6 +534,102 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
 .zts-threat.low{color:var(--amber);}
 .zts-threat.high{color:var(--blood-bright);animation:pulse .9s infinite;}
 
+/* ── TILE STRIP MINI BADGES ── */
+.zts-mini-badge{
+  font-family:var(--mono);font-size:7px;padding:1px 4px;
+  border-radius:2px;letter-spacing:.5px;font-weight:700;
+}
+.zts-mini-badge.bari{background:rgba(240,192,0,.1);color:var(--amber);border:1px solid rgba(240,192,0,.25);}
+.zts-mini-badge.noise-lo{background:rgba(240,192,0,.08);color:#888;border:1px solid #222;}
+.zts-mini-badge.noise-hi{background:rgba(192,57,43,.15);color:var(--blood-bright);border:1px solid rgba(192,57,43,.3);animation:pulse .8s infinite;}
+.zts-mini-badge.rumor{background:rgba(79,195,247,.1);color:#4FC3F7;border:1px solid rgba(79,195,247,.25);}
+
+/* ── NOISE METER in status panel ── */
+.srt-noise-block{
+  padding:5px 8px 6px;border-bottom:1px solid #111;
+}
+.srt-noise-hdr{
+  display:flex;justify-content:space-between;align-items:center;
+  font-family:var(--mono);font-size:8px;color:#555;margin-bottom:3px;
+}
+.srt-noise-track{
+  height:4px;background:#111;border-radius:2px;overflow:hidden;
+}
+.srt-noise-fill{
+  height:100%;border-radius:2px;transition:width .4s ease;
+}
+.srt-noise-fill.ok   { background:var(--green); }
+.srt-noise-fill.warn { background:var(--amber); }
+.srt-noise-fill.crit { background:var(--blood-bright);animation:noiseFlicker .4s infinite; }
+@keyframes noiseFlicker{0%,100%{opacity:1}50%{opacity:.5}}
+.srt-val.ok   { color:var(--green);   font-family:var(--mono);font-size:8px; }
+.srt-val.warn { color:var(--amber);   font-family:var(--mono);font-size:8px; }
+.srt-val.crit { color:var(--blood-bright); font-family:var(--mono);font-size:8px;animation:pulse .6s infinite; }
+
+/* ── BASE EVENT BANNER in threats ── */
+.srt-event-banner{
+  background:rgba(192,57,43,.12)!important;
+  border-radius:2px;
+}
+
+/* ── RUMOR TARGET in radio popup ── */
+.radio-rumor-target{
+  display:flex;align-items:center;gap:8px;
+  background:#0a0a00;border:1px solid rgba(240,192,0,.15);
+  border-radius:3px;padding:8px 10px;margin:8px 0;
+}
+
+/* ── TILE PANEL INLINE — vật thể trong tile hiện tại ── */
+.tile-panel-inline{
+  flex:1;overflow-y:auto;min-height:0;
+  background:#060606;border-top:1px solid #111;
+}
+.tile-panel-inline::-webkit-scrollbar{width:2px;}
+.tile-panel-inline::-webkit-scrollbar-thumb{background:#1e1e1e;}
+.tpi-empty{
+  font-family:var(--mono);font-size:8px;color:#1a1a1a;
+  padding:10px 12px;letter-spacing:1px;
+}
+/* Compact object cards inside inline panel */
+.tile-panel-inline .obj-card{
+  display:flex;align-items:center;gap:8px;
+  padding:7px 10px;border-bottom:1px solid #0d0d0d;
+  cursor:pointer;transition:background .1s;
+  background:#060606;
+}
+.tile-panel-inline .obj-card:hover{background:#0c0c0c;}
+.tile-panel-inline .obj-card.enemy-alive{
+  border-left:2px solid var(--blood);
+  background:rgba(192,57,43,.04);
+}
+.tile-panel-inline .obj-card.enemy-alive:hover{background:rgba(192,57,43,.08);}
+.tile-panel-inline .obj-icon{font-size:16px;flex-shrink:0;width:22px;text-align:center;}
+.tile-panel-inline .obj-info{flex:1;min-width:0;}
+.tile-panel-inline .obj-name{
+  font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;
+  color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tile-panel-inline .obj-meta{
+  font-family:var(--mono);font-size:8px;color:#333;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tile-panel-inline .obj-badge{
+  font-family:var(--mono);font-size:8px;padding:2px 5px;
+  border-radius:2px;flex-shrink:0;white-space:nowrap;
+}
+.tile-panel-inline .obj-badge.danger{
+  background:rgba(192,57,43,.15);color:var(--blood-bright);
+  border:1px solid rgba(192,57,43,.3);
+}
+.tile-panel-inline .obj-badge.neutral{
+  background:#0d0d0d;color:#444;border:1px solid #1c1c1c;
+}
+.tile-panel-inline .obj-badge.npc{
+  background:rgba(100,180,100,.1);color:#5DD462;
+  border:1px solid rgba(100,180,100,.2);
+}
+
+
 /* ══════════════════════════════
    RIGHT — STATUS COLUMN
    ══════════════════════════════ */
@@ -721,7 +817,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
 }
 
 /* ── KEEP OLD CLASSES (prevent crashes) ── */
-.tile-panel{display:none;}
+.tile-panel{ /* now rendered inline in gw-section via .tile-panel-inline */ }
 .right-panel{display:none;}
 .stats-mini{display:none;}
 .dir-section{display:none;}
@@ -1865,19 +1961,24 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
 .equip-grid-cell.selected{border-color:var(--amber);background:#0e0d00;}
 .grid-actions{
   position:absolute;bottom:0;left:0;right:0;
-  display:none;flex-direction:row;
-  background:rgba(10,10,10,.95);border-top:1px solid #2a2a2a;
+  display:flex;flex-direction:row;
+  background:rgba(10,10,0,.9);border-top:1px solid #2a2200;
+  opacity:0;transition:opacity .15s;
 }
-.equip-grid-cell.selected .grid-actions{display:flex;}
+.equip-grid-cell:hover .grid-actions,
+.equip-grid-cell.selected .grid-actions{opacity:1;}
 .grid-act-btn{
   flex:1;font-family:var(--mono);font-size:8px;padding:4px 2px;
   border:none;background:none;cursor:pointer;-webkit-appearance:none;
   transition:background .1s;letter-spacing:.3px;
 }
 .grid-act-btn:hover{background:rgba(255,255,255,.06);}
-.grid-act-btn.act-use{color:var(--green);}
-.grid-act-btn.act-equip{color:var(--blue);}
-.grid-act-btn.act-drop{color:#444;}
+.grid-act-btn.act-use{color:#44dd44;font-weight:700;}
+.grid-act-btn.act-equip{color:#4FC3F7;font-weight:700;}
+.grid-act-btn.act-drop{color:#666;}
+.grid-act-btn:hover.act-use{background:rgba(68,221,68,.1);}
+.grid-act-btn:hover.act-equip{background:rgba(79,195,247,.1);}
+.grid-act-btn:hover.act-drop{background:rgba(192,57,43,.1);color:var(--blood-bright);}
 
 /* Empty grid placeholder */
 .grid-empty{
@@ -2401,20 +2502,23 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
         <!-- ══ TOP ROW: Zone Map (left) + Status (right) ══ -->
         <div class="main-top-row">
 
-          <!-- ── LEFT: Zone Grid + Tile Strip ── -->
+          <!-- ── LEFT: Zone Grid + Tile Objects ── -->
           <div class="gw-section" id="gw-section">
             <div class="gw-label">// ZONE MAP</div>
             <div class="gw-grid" id="gw-grid"><!-- JS renders --></div>
+            <!-- Tile strip: current location info -->
             <div class="zone-tile-strip" id="zone-tile-strip">
               <div class="zts-icon" id="zts-icon">🏚</div>
               <div class="zts-body">
                 <div class="zts-name" id="zts-name">—</div>
                 <div class="zts-meta">
-                  <span id="zts-type" style="color:#2a2a2a">—</span>
+                  <span id="zts-type-wrap" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="color:#2a2a2a">—</span></span>
                   <span class="zts-threat none" id="zts-threat">✓ AN TOÀN</span>
                 </div>
               </div>
             </div>
+            <!-- Tile panel: objects, enemies, containers in current tile -->
+            <div id="tile-panel" class="tile-panel-inline"><!-- JS renders --></div>
           </div>
 
           <!-- ── RIGHT: Status Panel ── -->
@@ -2458,11 +2562,10 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
       </div>
     </div>
 
-    <!-- HIDDEN: old panels kept for popup system compatibility -->
-    <div id="tile-panel" style="display:none"></div>
-    <div id="dir-grid"   style="display:none"></div>
+    <!-- Hidden compat stubs — JS writes to these, they're unused visually -->
+    <div id="dir-grid"    style="display:none"></div>
     <div id="scan-global" style="display:none"></div>
-    <div id="stats-mini" style="display:none"></div>
+    <div id="stats-mini"  style="display:none"></div>
 
     <!-- MAP TAB — Full-Screen World Map -->
     <div id="tab-map" class="tab-panel">
@@ -3119,6 +3222,17 @@ async function UI_enter() {
 
   UI_renderAll();
   hideIntro();
+
+  // Rebind DW_generateRumor engine function (engine-world.js loads before shim)
+  if (typeof _DW_generateRumor_engine === 'undefined' || !_DW_generateRumor_engine) {
+    // engine-world.js defines DW_generateRumor(state) with 1 arg
+    // shim wraps it as DW_generateRumor() with 0 args
+    // We need to capture the original before shim overwrites
+    // At this point shim has already overwritten it — check _raw
+    if (typeof _raw !== 'undefined' && _raw.DW_generateRumor) {
+      window._DW_generateRumor_engine = _raw.DW_generateRumor;
+    }
+  }
 
   // Start real-time AP regen loop
   UI_startApRegen();
@@ -3947,52 +4061,6 @@ function UI_renderBaseActions(s, base) {
   el.innerHTML = btns.join('');
 }
 
-// ── UI_openBaseEvent ──────────────────────────────────
-// Hiển thị popup sự kiện base đang chờ (pendingBaseEvent).
-// Player chọn choice → DW_resolveBaseEvent → update state.
-function UI_openBaseEvent() {
-  const s = gs._state;
-  if (!s) return;
-  const event = s.pendingBaseEvent;
-  if (!event) { showNotif('Không có sự kiện nào đang chờ.', 'info'); return; }
-
-  // Xây overlay
-  let overlay = document.getElementById('base-event-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'base-event-overlay';
-    overlay.style.cssText = [
-      'position:fixed','inset:0','z-index:9999',
-      'display:flex','align-items:center','justify-content:center',
-      'background:rgba(0,0,0,.82)',
-    ].join(';');
-    document.body.appendChild(overlay);
-  }
-
-  const choices = event.choices || [];
-  const choiceHTML = choices.length > 0
-    ? choices.map(c => `<button class="base-act-btn${c.id==='flee'?' danger':c.id==='defend'?' primary':''}"
-        onclick="UI_resolveBaseEvent('${c.id}')">${c.label}</button>`).join('')
-    : `<button class="base-act-btn" onclick="UI_resolveBaseEvent('ok')">✅ Đã hiểu</button>`;
-
-  overlay.innerHTML = `
-    <div style="background:#0d0d0d;border:1px solid #333;border-radius:4px;padding:24px;max-width:340px;width:90%;font-family:'Rajdhani',sans-serif;">
-      <div style="font-size:28px;text-align:center;margin-bottom:8px;">${event.icon || '⚠️'}</div>
-      <div style="color:var(--amber,#c8963c);font-size:18px;font-weight:700;margin-bottom:8px;text-align:center">${event.title || 'Sự kiện'}</div>
-      <div style="color:#bbb;font-size:13px;line-height:1.6;margin-bottom:18px">${event.text || ''}</div>
-      <div style="display:flex;flex-direction:column;gap:8px">${choiceHTML}</div>
-    </div>`;
-  overlay.style.display = 'flex';
-}
-
-function UI_resolveBaseEvent(choiceId) {
-  const r = DW_resolveBaseEvent(choiceId);
-  document.getElementById('base-event-overlay').style.display = 'none';
-  if (r && r.msg) showNotif(r.msg, r.ok ? 'success' : 'danger');
-  UI_renderAll();
-  if (typeof UI_renderBaseTab === 'function') UI_renderBaseTab();
-}
-
 // Terrain cell click → show farm/clear options
 function UI_baseTerrainClick(key, terrainType, farmState, isCleared) {
   const s = gs._state;
@@ -4019,6 +4087,40 @@ function UI_baseTerrainClick(key, terrainType, farmState, isCleared) {
     _UI_doTerrainClear(key, terrainType);
   }
 }
+
+// ── BASE EVENT POPUP ──────────────────────────────────
+function UI_openBaseEvent() {
+  const s = gs._state;
+  const ev = s?.pendingBaseEvent;
+  if (!ev) { showNotif('Không có sự kiện đang chờ.', ''); return; }
+
+  const overlay = document.getElementById('popup-overlay');
+  const title   = document.getElementById('popup-title');
+  const body    = document.getElementById('popup-body');
+  if (!overlay) return;
+
+  title.textContent = (ev.icon||'⚠') + ' ' + (ev.title||'SỰ KIỆN');
+  body.innerHTML = `
+    <div style="padding:12px;font-family:'Rajdhani',sans-serif;font-size:14px;color:#ccc;line-height:1.6;border-left:3px solid var(--blood-bright);margin-bottom:12px">
+      ${ev.text||'Sự kiện không xác định.'}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px">
+      ${(ev.choices||[]).map((c,i)=>`
+        <button class="ctx-btn ${i===0?'ctx-danger':''}" onclick="UI_resolveBaseEvent(${i})" style="width:100%;text-align:left;padding:8px 12px">
+          <span style="color:var(--amber);margin-right:6px">${c.icon||'▶'}</span>${c.text||c.label||'Lựa chọn '+i}
+        </button>`).join('')}
+    </div>`;
+  overlay.classList.add('show');
+}
+
+function UI_resolveBaseEvent(choiceIdx) {
+  const r = DW_resolveBaseEvent(choiceIdx);
+  document.getElementById('popup-overlay')?.classList.remove('show');
+  if (!r || !r.ok) { showNotif(r?.msg||'Lỗi xử lý sự kiện.', 'danger'); return; }
+  showNotif(r.msg||'Sự kiện đã được xử lý.', 'success');
+  UI_renderAll();
+}
+
 
 function _UI_doTerrainClear(key, type) {
   const s = gs._state;
@@ -4168,10 +4270,12 @@ function UI_logSubTab(name) {
 }
 
 // ── FULL RE-RENDER ────────────────────────────────────
+let _lastPendingEvent = null;
 function UI_renderAll() {
   if (!gs) return;
   UI_renderHeader();
   UI_renderGameWorld();
+  UI_renderTilePanel();
   UI_renderStatusPanel();
   UI_renderMiniMapPanel();
   UI_renderContextActions();
@@ -4181,6 +4285,14 @@ function UI_renderAll() {
   if (activeTab==='log')   UI_renderLog();
   if (activeTab==='equip') UI_renderEquipment();
   if (activeTab==='craft') UI_renderCraft();
+  // Auto-notify when new base event appears
+  const ev = gs._state?.pendingBaseEvent;
+  if (ev && ev !== _lastPendingEvent) {
+    _lastPendingEvent = ev;
+    showNotif(`⚠ SỰ KIỆN BASE: ${ev.title||'Cần xử lý ngay!'}`, 'danger');
+  } else if (!ev) {
+    _lastPendingEvent = null;
+  }
 }
 
 // ── GAME WORLD GRID ───────────────────────────────────
@@ -4272,21 +4384,33 @@ function UI_renderMiniMapPanel() {
 }
 
 function _UI_updateTileStrip() {
-  const tile  = DW_currentTile();
-  const s     = gs._state;
+  const tile   = DW_currentTile();
+  const s      = gs._state;
   if (!tile) return;
-  const tdef  = TILE_TYPES[tile.type] || {};
-  const zCount= tile.zombies || 0;
-  const raw   = s?.tiles?.[`${s.x},${s.y}`];
-  const hasBoss=(raw?.objects||[]).some(o=>o?.isBoss);
+  const tdef   = TILE_TYPES[tile.type] || {};
+  const zCount = tile.zombies || 0;
+  const raw    = s?.tiles?.[`${s.x},${s.y}`];
+  const hasBoss    = (raw?.objects||[]).some(o=>o?.isBoss);
+  const barricade  = raw?.barricade || 0;
+  const noise      = s?.noise || 0;
+  const hasRumor   = !!(s?.activeRumor && s.activeRumor.targetX === s.x && s.activeRumor.targetY === s.y);
   const nameEl = document.getElementById('zts-name');
   const iconEl = document.getElementById('zts-icon');
   const typeEl = document.getElementById('zts-type');
   const thrEl  = document.getElementById('zts-threat');
+  const metaExtraEl = document.getElementById('zts-meta-extra');
   if (!nameEl) return;
   nameEl.textContent = tile.name || tdef.name || '—';
   iconEl.textContent = tdef.icon || '🏚';
-  typeEl.textContent = (tdef.name||tile.type||'—').toUpperCase();
+  // type line: barricade + noise badges
+  let typeHtml = `<span style="color:#2a2a2a">${(tdef.name||tile.type||'—').toUpperCase()}</span>`;
+  if (barricade > 0) typeHtml += ` <span class="zts-mini-badge bari">🧱×${barricade}</span>`;
+  if (noise >= 4)    typeHtml += ` <span class="zts-mini-badge noise-hi">🔊${noise}</span>`;
+  else if (noise>0)  typeHtml += ` <span class="zts-mini-badge noise-lo">🔊${noise}</span>`;
+  if (hasRumor)      typeHtml += ` <span class="zts-mini-badge rumor">📍TIN ĐỒN</span>`;
+  const typeContainer = document.getElementById('zts-type-wrap');
+  if (typeContainer) typeContainer.innerHTML = typeHtml;
+  else { const t=document.getElementById('zts-type'); if(t) t.textContent=(tdef.name||tile.type||'—').toUpperCase(); }
   if (hasBoss)         { thrEl.textContent='☠ BOSS!';      thrEl.className='zts-threat high'; }
   else if (zCount > 2) { thrEl.textContent=`🧟 ${zCount}`; thrEl.className='zts-threat high'; }
   else if (zCount > 0) { thrEl.textContent=`⚠ ${zCount}Z`; thrEl.className='zts-threat low';  }
@@ -4322,7 +4446,7 @@ function UI_renderStatusPanel() {
     const m=Math.min(16,p.maxAp),f=Math.min(m,p.ap);
     apDotsEl.innerHTML=Array.from({length:m},(_,i)=>`<div class="ap-dot${i>=f?' empty':''}"></div>`).join('');
   }
-  // Threats
+  // ── THREATS + NOISE + PANIC + BASE EVENT ─────────────
   const thrEl=document.getElementById('sr-threats');
   if (thrEl) {
     const tile=DW_currentTile();
@@ -4330,10 +4454,65 @@ function UI_renderStatusPanel() {
     const zc=tile?.zombies||0;
     const boss=(raw?.objects||[]).some(o=>o?.isBoss);
     const noise=s?.noise||0;
+    const tileLvl=raw?.noiseLvl||0;
+    const effectiveNoise=Math.max(noise,tileLvl);
+    const panicMode=s?.panicMode||false;
+    const hasPending=!!(s?.pendingBaseEvent);
+    const activeRumor=s?.activeRumor;
     let rows='';
+
+    // BASE EVENT BANNER — most urgent
+    if (hasPending) {
+      const ev=s.pendingBaseEvent;
+      rows+=`<div class="srt-row danger srt-event-banner" onclick="UI_tab('base');setTimeout(()=>UI_openBaseEvent(),100)" style="cursor:pointer;border-left:3px solid var(--blood-bright);padding-left:6px">
+        <span>⚠ ${ev?.title||'SỰ KIỆN BASE'}</span>
+        <span class="srt-badge boss" style="animation:pulse .7s infinite">!</span>
+      </div>`;
+    }
+
+    // PANIC MODE
+    if (panicMode) {
+      rows+=`<div class="srt-row danger" style="animation:pulse .6s infinite;border-left:3px solid #C0392B">
+        <span>😱 PANIC MODE</span><span class="srt-badge boss">STRESS CAO</span>
+      </div>`;
+    }
+
+    // BOSS
     if (boss) rows+=`<div class="srt-row danger"><span>☠ BOSS</span><span class="srt-badge boss">NGUY HIỂM</span></div>`;
-    if (zc>0) rows+=`<div class="srt-row ${zc>2?'danger':'near'}"><span>🧟 Zombie</span><span>${zc}</span></div>`;
-    if (noise>0) rows+=`<div class="srt-row near"><span>🔊 Tiếng ồn</span><span>${noise}</span></div>`;
+
+    // ZOMBIE COUNT
+    if (zc>0) {
+      const hasHorde=(raw?.objects||[]).some(o=>o?.type==='enemy'&&o.alive&&o.isHorde);
+      const hordeTxt=hasHorde?` 🧟 Bầy`:'';
+      rows+=`<div class="srt-row ${zc>2?'danger':'near'}"><span>🧟${hordeTxt}</span><span>${zc} zombie</span></div>`;
+    }
+
+    // NOISE METER — full visual bar
+    if (effectiveNoise>0) {
+      const noiseW=Math.min(100,effectiveNoise/10*100);
+      const noiseCls=effectiveNoise<=3?'ok':effectiveNoise<=6?'warn':'crit';
+      const noiseLabel=effectiveNoise<=2?'THẤP':effectiveNoise<=5?'TRUNG BÌNH':effectiveNoise<=8?'CAO':'NGUY HIỂM';
+      const zombieThreat=effectiveNoise>=5?`<span style="color:var(--blood-bright);font-size:8px">⚡ Zombie sắp kéo đến!</span>`:'';
+      rows+=`<div class="srt-noise-block">
+        <div class="srt-noise-hdr"><span>🔊 TIẾNG ỒN</span><span class="srt-val ${noiseCls}">${noiseLabel}</span></div>
+        <div class="srt-noise-track"><div class="srt-noise-fill ${noiseCls}" style="width:${noiseW}%"></div></div>
+        ${zombieThreat}
+      </div>`;
+    }
+
+    // ACTIVE RUMOR TARGET NEARBY
+    if (activeRumor && !activeRumor.resolved) {
+      const dx=Math.abs((activeRumor.targetX||0)-(s.x||0));
+      const dy=Math.abs((activeRumor.targetY||0)-(s.y||0));
+      const dist=dx+dy;
+      if (dist<=5) {
+        rows+=`<div class="srt-row near" style="border-left:2px solid var(--amber)">
+          <span>📍 ${activeRumor.baitIcon||'?'} Mục tiêu</span>
+          <span style="color:var(--amber)">${dist===0?'ĐÂY RỒI!':dist<=2?'Rất gần':'~'+dist+'tiles'}</span>
+        </div>`;
+      }
+    }
+
     if (!rows) rows=`<div class="srt-row clear"><span>Khu vực</span><span style="color:#1a1a1a">SẠCH</span></div>`;
     thrEl.innerHTML=rows;
   }
@@ -4344,8 +4523,8 @@ function UI_renderStatusPanel() {
   if (dayEl) dayEl.textContent=gs.time?.day||1;
   if (kEl)   kEl.textContent=gs.stats?.kills||0;
   if (tEl)   tEl.textContent=gs.stats?.tilesExplored||0;
-  // Ensure ap-regen-timer-hud exists
-  if (!document.getElementById('ap-regen-timer-hud')) {
+  // Ensure ap-regen-timer-hud exists (guard: document.body may be null during early render)
+  if (!document.getElementById('ap-regen-timer-hud') && document.body) {
     const t=document.createElement('div');
     t.id='ap-regen-timer-hud';t.style.display='none';
     document.body.appendChild(t);
@@ -4357,21 +4536,33 @@ function UI_renderContextActions() {
   const bar = document.getElementById('ctx-actions-bar');
   if (!bar) return;
   const tile = DW_currentTile();
+  if (!tile) return;
   const p    = gs.player;
   const s    = gs._state;
   const btns = [];
 
-  tile.objects.forEach((obj, idx) => {
+  // AP recovery preview
+  const maxAp   = p.maxAp || 40;
+  const restGain = Math.max(1, Math.floor(maxAp * 0.20));
+  const hasEnemy = (tile.objects||[]).some(o => o?.type==='enemy' && o.alive);
+  const restCount = s?.restCount || 0;
+
+  (tile.objects || []).forEach((obj, idx) => {
     if (!obj) return;
-    if (obj.used && obj.type !== 'npc') return;
     if (obj.type === 'enemy' && obj.alive) {
+      const cost = obj.fightAp || 2;
+      const canAfford = p.ap >= cost;
       if (obj.isBoss) {
-        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})">☠ Boss</button>`);
+        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>☠ BOSS [-${cost}ĐHĐ]</button>`);
       } else {
-        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})">⚔ Tấn công</button>`);
+        btns.push(`<button class="ctx-btn ctx-danger" onclick="UI_openCombat(${idx})" ${!canAfford?'disabled':''}>⚔ Tấn công [-${cost}ĐHĐ]</button>`);
       }
+    } else if (obj.type === 'enemy' && !obj.alive) {
+      // Dead enemy — can loot
+      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})">💀 Lục xác zombie</button>`);
     } else if (obj.type === 'container' && !obj.looted) {
-      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})">🔍 Lục soát</button>`);
+      const cost = obj.searchAp || 1;
+      btns.push(`<button class="ctx-btn ctx-primary" onclick="UI_openObjectPopup(${idx})" ${p.ap<cost?'disabled':''}>🔍 Lục soát [-${cost}ĐHĐ]</button>`);
     } else if (obj.type === 'npc') {
       btns.push(`<button class="ctx-btn" onclick="UI_execNPC(${idx})">💬 Nói chuyện</button>`);
     } else if (obj.type === 'special' && !obj.used) {
@@ -4379,14 +4570,19 @@ function UI_renderContextActions() {
     }
   });
 
-  btns.push(`<button class="ctx-btn" onclick="UI_doRest()"      ${p.ap<1?'disabled':''}>🛌 Nghỉ</button>`);
-  btns.push(`<button class="ctx-btn" onclick="UI_doSleep()"                             >💤 Ngủ</button>`);
-  btns.push(`<button class="ctx-btn" onclick="UI_doBarricade()" ${p.ap<3?'disabled':''}>🧱 Barricade</button>`);
+  // Rest — show AP gain + limit
+  const restLeft = Math.max(0, 2 - restCount);
+  const restLabel = restLeft > 0
+    ? `🛌 Nghỉ [+${restGain}ĐHĐ · còn ${restLeft}]`
+    : `🛌 Nghỉ [Đã đủ]`;
+  btns.push(`<button class="ctx-btn" onclick="UI_doRest()" ${(p.ap<1||hasEnemy||restLeft<=0)?'disabled':''}>${restLabel}</button>`);
+  btns.push(`<button class="ctx-btn" onclick="UI_doSleep()" ${hasEnemy?'disabled':''}>💤 Ngủ [Ngày mới]</button>`);
+  btns.push(`<button class="ctx-btn" onclick="UI_doBarricade()" ${p.ap<2?'disabled':''}>🧱 Barricade [-2ĐHĐ]</button>`);
 
-  // "Về Base" button — chỉ hiện khi có base và không đang ở base
+  // Base buttons
   const hasBase = !!(s?.base?.tileKey);
-  const atBase = hasBase && s.x === Number(s.base.tileKey.split(',')[0]) &&
-                            s.y === Number(s.base.tileKey.split(',')[1]);
+  const atBase  = hasBase && s.x === Number(s.base.tileKey.split(',')[0]) &&
+                             s.y === Number(s.base.tileKey.split(',')[1]);
   if (hasBase && !atBase) {
     btns.push(`<button class="go-home-btn-inline" onclick="UI_showGoHome()">🏕 VỀ BASE</button>`);
   }
@@ -4454,18 +4650,32 @@ function UI_renderHeader() {
   // Status effects strip
   const strip = document.getElementById('status-strip');
   if (strip) {
+    const st = gs._state || {};                     // FIX: named 'st' to avoid collision
     const effects = p.statusEffects || [];
     if (effects.length === 0) {
       strip.innerHTML = '<span style="font-family:var(--mono);font-size:10px;color:#2a2a2a;padding:2px 6px">Không có hiệu ứng</span>';
     } else {
-      strip.innerHTML = effects.map(s => {
-        const def = STATUS_DEFS[s.type] || { icon:'?', name:s.type, color:'#555' };
+      strip.innerHTML = effects.map(eff => {        // FIX: renamed loop var 's' → 'eff'
+        const def = STATUS_DEFS[eff.type] || { icon:'?', name:eff.type, color:'#555' };
         return `<span class="status-badge" style="background:${def.color}22;color:${def.color};border:1px solid ${def.color}44">
-          ${def.icon} ${def.name} (${s.turnsLeft} AP)
+          ${def.icon} ${def.name} (${eff.turnsLeft} AP)
         </span>`;
       }).join('');
     }
-    // Active bosses warning
+    // PANIC MODE chip
+    if (st.panicMode) {
+      strip.innerHTML += `<span class="status-badge" style="background:rgba(192,57,43,.25);color:#FF4444;border:1px solid var(--blood);animation:pulse .5s infinite;font-weight:bold">
+        😱 PANIC! Zombie đang kéo đến!
+      </span>`;
+    }
+    // ACTIVE RUMOR chip
+    if (st.activeRumor && !st.activeRumor.resolved) {
+      const rumor = st.activeRumor;
+      strip.innerHTML += `<span class="status-badge" style="background:rgba(240,192,0,.1);color:var(--amber);border:1px solid rgba(240,192,0,.3);cursor:pointer" onclick="UI_openRadio()">
+        📍 ${rumor.baitIcon||'?'} ${rumor.targetName||'Mục tiêu tin đồn'}
+      </span>`;
+    }
+    // ACTIVE BOSSES
     const activeBosses = (gs.activeBosses||[]).filter(b=>!b.defeated);
     if (activeBosses.length > 0) {
       strip.innerHTML += activeBosses.map(b => {
@@ -4480,97 +4690,75 @@ function UI_renderHeader() {
 
 // ── TILE PANEL ────────────────────────────────────────
 function UI_renderTilePanel() {
-  const tile = DW_currentTile();
-  const tdef = TILE_TYPES[tile.type] || {};
+  const tile  = DW_currentTile();
+  if (!tile) return;
   const panel = document.getElementById('tile-panel');
+  if (!panel) return;
 
-  const zCount = tile.zombies || 0;
-  const zColor = zCount===0?'var(--green)':zCount<=2?'var(--amber)':zCount<=5?'#FF8C00':'var(--blood-bright)';
-  const zText  = zCount===0?'Không có zombie':`${zCount} zombie`;
-  // Threat level for header left border
-  const threatCls = zCount===0?'threat-none':zCount<=3?'threat-low':'threat-high';
+  const objects = tile.objects || [];
+  let html = '';
 
-  const bariText = tile.barricade>0 ? `🧱 ${tile.barricade}/5` : '';
-
-  let objsHtml = '';
-  tile.objects.forEach((obj, idx) => {
+  objects.forEach((obj, idx) => {
     if (!obj) return;
-    const isEnemy     = obj.type === 'enemy';
-    const isLooted    = obj.looted;
-    const isDead      = isEnemy && !obj.alive;
-    if (obj.used && !isEnemy && obj.type !== 'npc') return; // ẩn special đã dùng, giữ NPC
+    // Look up definition: OBJECT_DEFS has icon+label keyed by obj.type
+    const def      = (typeof OBJECT_DEFS !== 'undefined' && OBJECT_DEFS[obj.type]) || {};
+    const objType  = def.type || obj.type || 'container';
+    const isEnemy  = objType === 'enemy';
+    const isDead   = isEnemy && obj.alive === false;
+    const isLooted = obj.looted;
+    if (obj.used && !isEnemy && objType !== 'npc') return;
 
-    let badgeHtml = '';
-    if (isEnemy && obj.alive) {
-      const dmgColor = obj.damage>=4?'var(--blood-bright)':obj.damage>=2?'#FF8C00':'var(--amber)';
-      badgeHtml = `<div class="obj-badge danger">⚔ ${obj.fightAp} ĐHĐ · <span style="color:${dmgColor}">${obj.damage} dmg</span></div>`;
-    } else if (obj.type === 'container') {
-      badgeHtml = isLooted
-        ? `<div class="obj-badge neutral" style="opacity:.5">🔓 Đã lục</div>`
-        : `<div class="obj-badge neutral">🔍 ${obj.searchAp} ĐHĐ</div>`;
-    } else if (obj.type === 'npc') {
-      badgeHtml = `<div class="obj-badge npc">💬 Nói chuyện</div>`;
-    } else if (obj.type === 'special') {
-      badgeHtml = `<div class="obj-badge special">🔧 Tương tác</div>`;
-    }
+    // Resolve icon + label from def, fall back to obj fields
+    const icon  = obj.icon  || def.icon  || '📦';
+    const label = obj.label || def.label || obj.id || obj.type || '???';
 
-    // Card CSS classes
-    const lootedClass = isLooted || isDead ? ' looted' : '';
-    const enemyClass  = isEnemy  ? ' enemy'  : '';
-    const aliveClass  = isEnemy && obj.alive ? ' enemy-alive' : '';
-    const npcClass    = obj.type==='npc'     ? ' npc-card'    : '';
-    const specClass   = obj.type==='special' ? ' special-card': '';
+    let badge = '';
+    let meta  = '';
+    let click = `UI_openObjectPopup(${idx})`;
 
-    let metaText = '';
-    if (isEnemy && obj.alive) {
-      metaText = obj.isHorde ? `Bầy ${obj.count} con` : `Zombie đơn lẻ`;
+    if (isEnemy && obj.alive !== false) {
+      const dmg = obj.damage ?? def.fightAp ?? 1;
+      const dmgColor = dmg>=4?'var(--blood-bright)':dmg>=2?'#FF8C00':'var(--amber)';
+      const isHorde  = obj.isHorde || def.isHorde;
+      const cnt      = obj.count || '';
+      badge = `<span class="obj-badge danger">⚔ <span style="color:${dmgColor}">${dmg}dmg</span></span>`;
+      meta  = isHorde ? `🧟 Bầy${cnt?' '+cnt+' con':''}` : '🧟 Zombie đơn lẻ';
+      click = `UI_openCombat(${idx})`;         // direct to combat
     } else if (isDead) {
-      metaText = 'Đã bị tiêu diệt';
-    } else if (obj.type==='container') {
-      metaText = isLooted ? 'Đã lục soát' : 'Chưa lục soát';
-    } else if (obj.type==='npc') {
-      metaText = 'Người sống sót';
-    } else if (obj.type==='special') {
-      metaText = obj.label;
+      badge = `<span class="obj-badge neutral" style="opacity:.4">💀 Đã chết</span>`;
+      meta  = 'Lục xác để tìm đồ';
+      click = `UI_openObjectPopup(${idx})`;
+    } else if (objType === 'container') {
+      const apCost = obj.searchAp || def.searchAp || 1;
+      badge = isLooted
+        ? `<span class="obj-badge neutral" style="opacity:.4">🔓 Trống</span>`
+        : `<span class="obj-badge neutral">🔍 Lục soát</span>`;
+      meta  = isLooted ? 'Đã lục soát' : `Tốn ${apCost} ĐHĐ`;
+      if (isLooted) click = '';
+    } else if (objType === 'npc') {
+      badge = `<span class="obj-badge npc">💬 NPC</span>`;
+      meta  = 'Người sống sót';
+      click = `UI_execNPC(${idx})`;
+    } else if (objType === 'special' || objType === 'material') {
+      badge = `<span class="obj-badge neutral">🔧 ${def.label||'Đặc biệt'}</span>`;
+      meta  = `Tốn ${def.ap||obj.ap||1} ĐHĐ`;
+    } else if (objType === 'usable') {
+      badge = `<span class="obj-badge neutral" style="color:var(--green)">💊 Dùng được</span>`;
+      meta  = `Tốn ${def.ap||1} ĐHĐ`;
     }
 
-    objsHtml += `
-      <div class="obj-card${enemyClass}${aliveClass}${lootedClass}${npcClass}${specClass}" onclick="${isLooted&&!isEnemy?'':(`UI_openObjectPopup(${idx})`)}">
-        <div class="obj-icon">${obj.icon}</div>
-        <div class="obj-info">
-          <div class="obj-name">${obj.label}</div>
-          <div class="obj-meta">${metaText}</div>
-        </div>
-        ${badgeHtml}
-      </div>`;
+    const enemyCls = isEnemy && obj.alive !== false ? ' enemy-alive' : '';
+    html += `<div class="obj-card${enemyCls}" ${click?`onclick="${click}"`:'style="cursor:default"'}>
+      <div class="obj-icon">${icon}</div>
+      <div class="obj-info">
+        <div class="obj-name">${label}</div>
+        <div class="obj-meta">${meta}</div>
+      </div>
+      ${badge}
+    </div>`;
   });
 
-  if (!objsHtml) objsHtml = '<div style="padding:14px 12px;font-family:var(--mono);font-size:9px;color:#2a2a2a;">Không có gì đặc biệt ở đây.</div>';
-
-  const descHtml = tile.desc
-    ? `<div class="tile-desc">${tile.desc}</div>`
-    : `<div class="tile-desc loading blinking">AI đang mô tả địa điểm...</div>`;
-
-  panel.innerHTML = `
-    <div class="tile-header ${threatCls}">
-      <div class="tile-icon-row">
-        <div class="tile-big-icon">${tdef.icon||'📍'}</div>
-        <div style="min-width:0;flex:1">
-          <div class="tile-title">${tile.name}</div>
-          <div class="tile-meta">
-            <span class="z-count" style="color:${zColor}">${zText}</span>
-            ${bariText?`<span style="color:#555">${bariText}</span>`:''}
-            ${tile.special?`<span style="color:#4FC3F7">⭐ Đặc biệt</span>`:''}
-          </div>
-        </div>
-      </div>
-    </div>
-    ${descHtml}
-    <div class="obj-section">
-      <div class="obj-section-title">// VẬT THỂ TRONG KHU VỰC</div>
-    </div>
-    <div class="obj-list">${objsHtml}</div>
-  `;
+  panel.innerHTML = html || `<div class="tpi-empty">// Không có gì đặc biệt //</div>`;
 }
 
 // ── DIRECTION PAD ─────────────────────────────────────
@@ -4794,9 +4982,6 @@ function _renderEquipDoll() {
     </div>`;
   }
 
-  // Thêm slot feet nếu engine chưa có
-  if (!EQUIP_SLOTS.feet) EQUIP_SLOTS.feet = {label:'Giày', icon:'👟', hint:'Bảo vệ chân'};
-
   const armorBonus = DW_getArmorBonus ? DW_getArmorBonus() : 0;
   const weapId     = eq.weapon;
   const weapEdef   = weapId ? (EQUIP_DEFS[weapId]||{}) : null;
@@ -4868,6 +5053,13 @@ function _renderEquipGrid() {
     const isUsable   = def.usable || false;
     const typeCls    = `type-${def.type||'material'}`;
     const selected   = i === _equipSelectedIdx ? ' selected' : '';
+    // Rarity display
+    const rarityId  = (p.itemRarity && p.itemRarity[i]) || 'common';
+    const rarityLbl = (typeof DW_getRarityLabel === 'function') ? DW_getRarityLabel(rarityId) : '';
+    const rarityColor = {common:'#444',uncommon:'#2a7a2a',rare:'#1a4a9a',epic:'#6a1a9a',legendary:'#9a5a00'}[rarityId] || '#444';
+    const rarityHtml = rarityId !== 'common'
+      ? `<div style="font-family:var(--mono);font-size:7px;color:${rarityColor};letter-spacing:.5px">${rarityLbl}</div>`
+      : '';
 
     // Action buttons: chỉ hiện khi cell được chọn
     const actUse   = isUsable   ? `<button class="grid-act-btn act-use"   onclick="UI_equipGridUse(${i})">DÙNG</button>`  : '';
@@ -4877,6 +5069,7 @@ function _renderEquipGrid() {
     return `<div class="equip-grid-cell ${typeCls}${selected}" onclick="UI_equipGridSelect(${i})" title="${def.name||itemId}${def.desc?'\n'+def.desc:''}">
       <div class="grid-icon">${def.icon||'📦'}</div>
       <div class="grid-name">${def.name||itemId}</div>
+      ${rarityHtml}
       <div class="grid-actions">
         ${actUse}${actEquip}${actDrop}
       </div>
@@ -5446,17 +5639,27 @@ async function UI_doMove(dir) {
 
 async function UI_doRest() {
   const r = DW_rest();
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  showNotif('🛌 Nghỉ ngơi. +2 Stamina.','success');
+  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
+  // Second wind detection — show special popup
+  const isSecondWind = r.msg && r.msg.includes('Second Wind');
+  if (isSecondWind) {
+    showNotif('⚡ SECOND WIND! ' + r.msg, 'success');
+    // Flash the AP display
+    const apEl = document.getElementById('sr-ap-num');
+    if (apEl) { apEl.style.color='var(--amber)'; setTimeout(()=>apEl.style.color='',1500); }
+  } else {
+    showNotif('🛌 ' + r.msg, 'success');
+  }
   UI_renderAll();
 }
 
 async function UI_doSleep() {
   const prevDay = gs?.time?.day || 1;
   const r = DW_sleep();
-  if (!r.ok) { showNotif(r.msg,'danger'); return; }
-  showNotif(`🌅 Ngày ${r.newDay} bắt đầu. ĐHĐ hồi đầy.`,'success');
-  UI_checkRadioTick(prevDay, r.newDay);
+  if (!r.ok) { showNotif(r.msg, 'danger'); return; }
+  const newDay = gs?.time?.day || (prevDay + 1);
+  showNotif(`🌅 Ngày ${newDay} bắt đầu. ĐHĐ hồi đầy.`, 'success');
+  UI_checkRadioTick(prevDay, newDay);
   UI_renderAll();
 }
 
@@ -5586,47 +5789,85 @@ async function UI_openRadio() {
   const body    = document.getElementById('radio-popup-body');
   overlay.classList.add('show');
 
-  body.innerHTML = `
-    <div class="radio-signal-line">
-      <div class="radio-signal-bars">
-        <div class="radio-bar active"></div>
-        <div class="radio-bar active"></div>
-        <div class="radio-bar active"></div>
-        <div class="radio-bar"></div>
-        <div class="radio-bar"></div>
-      </div>
-      <span>Đang quét tần số...</span>
-    </div>
+  const barHtml = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<3?' active':''}"></div>`).join('')}</div>`;
+  body.innerHTML = `<div class="radio-signal-line">${barHtml}<span>Đang quét tần số...</span></div>
     <div class="radio-transmission" style="color:#444;font-style:italic">◌ Tìm kiếm tín hiệu...</div>
-    <div class="radio-footer">
-      <button class="radio-action-btn" onclick="UI_closeRadio()">Bỏ qua</button>
-    </div>`;
+    <div class="radio-footer"><button class="radio-action-btn" onclick="UI_closeRadio()">Đóng</button></div>`;
 
-  // Fetch AI rumour
-  let text = RADIO_FALLBACKS[Math.floor(Math.random() * RADIO_FALLBACKS.length)];
-  const ai = await UI_fetchRadioRumour();
-  if (ai) text = ai;
+  // ── Show active rumor if exists ──
+  const s = gs?._state;
+  const activeRumor = s?.activeRumor;
+  if (activeRumor && !activeRumor.resolved) {
+    const dx = Math.abs((activeRumor.targetX||0)-(s.x||0));
+    const dy = Math.abs((activeRumor.targetY||0)-(s.y||0));
+    const dist = dx+dy;
+    const distTxt = dist===0
+      ? `<span style="color:var(--green);font-weight:bold;font-size:11px">⭐ BẠN ĐANG Ở ĐÂY!</span>`
+      : dist<=2 ? `<span style="color:var(--amber);font-size:10px">🔥 Rất gần · ${dist} ô</span>`
+      : `<span style="color:#555;font-size:9px">Cách ${dist} ô · ${activeRumor.targetName||'???'}</span>`;
+    const barHtml4 = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<4?' active':''}"></div>`).join('')}</div>`;
+    body.innerHTML = `
+      <div class="radio-signal-line">${barHtml4}<span style="color:var(--amber)">TIN ĐỒN ĐANG THEO DÕI</span></div>
+      <div class="radio-transmission" style="border-left:3px solid var(--amber);padding-left:10px;margin:8px 0">${activeRumor.text}</div>
+      <div class="radio-rumor-target">
+        <span style="font-size:18px">${activeRumor.baitIcon||'📍'}</span>
+        <div style="flex:1">
+          <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#ddd;font-size:13px">${activeRumor.targetName||'Địa điểm bí ẩn'}</div>
+          ${distTxt}
+        </div>
+      </div>
+      <div class="radio-footer">
+        <button class="radio-action-btn" onclick="UI_closeRadio()">Đóng</button>
+        <button class="radio-action-btn" style="opacity:.5;font-size:8px" onclick="UI_closeRadio();if(gs._state)gs.setState({...gs._state,activeRumor:null});setTimeout(UI_openRadio,100)">Xóa tin đồn</button>
+      </div>`;
+    _radioHasNew = false; UI_updateRadioBtn();
+    return;
+  }
 
-  _radioRumours.unshift({ text, day: gs?.time?.day || 1 });
+  // ── Generate new rumor from engine ──
+  let rumorText = '';
+  let newRumor = null;
+  if (typeof DW_generateRumor === 'function' && gs) {
+    const r = DW_generateRumor();
+    if (r && r.ok) {
+      rumorText = r.msg || '';
+      newRumor = r.state?.activeRumor || null;
+      if (typeof gs.setState === 'function') gs.setState(r.state);
+      else if (gs._state) gs._state = r.state;
+      if (typeof DW_save === 'function') DW_save();
+    }
+  }
+  // AI fallback
+  if (!rumorText) {
+    const fallbacks = (typeof RADIO_FALLBACKS !== 'undefined') ? RADIO_FALLBACKS : ['📻 Tín hiệu yếu...'];
+    rumorText = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    const ai = await UI_fetchRadioRumour();
+    if (ai) rumorText = ai;
+  }
+
+  _radioRumours.unshift({ text: rumorText, day: gs?.time?.day || 1 });
   _radioHasNew = false;
   UI_updateRadioBtn();
 
-  body.innerHTML = `
-    <div class="radio-signal-line">
-      <div class="radio-signal-bars">
-        <div class="radio-bar active"></div>
-        <div class="radio-bar active"></div>
-        <div class="radio-bar active"></div>
-        <div class="radio-bar active"></div>
-        <div class="radio-bar"></div>
+  const targetBlock = newRumor ? `
+    <div class="radio-rumor-target">
+      <span style="font-size:18px">${newRumor.baitIcon||'📍'}</span>
+      <div style="flex:1">
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:#ddd;font-size:13px">${newRumor.targetName||'???'}</div>
+        <div style="font-family:var(--mono);font-size:8px;color:#555">📌 Đã đánh dấu bản đồ</div>
       </div>
-      <span>Tín hiệu nhận được — Ngày ${gs?.time?.day || 1}</span>
-    </div>
-    <div class="radio-transmission">${text}</div>
+    </div>` : '';
+
+  const barHtml5 = `<div class="radio-signal-bars">${Array(5).fill(0).map((_,i)=>`<div class="radio-bar${i<4?' active':''}"></div>`).join('')}</div>`;
+  body.innerHTML = `
+    <div class="radio-signal-line">${barHtml5}<span>Tín hiệu nhận — Ngày ${gs?.time?.day||1}</span></div>
+    <div class="radio-transmission">${rumorText}</div>
+    ${targetBlock}
     <div class="radio-footer">
-      <button class="radio-action-btn primary" onclick="UI_addStoryEntry('📻 \\"${text.replace(/"/g,"'")}\\"",'Radio'); UI_closeRadio(); showNotif('📍 Đã ghi nhớ tin đồn.','success')">📍 Đánh dấu</button>
+      <button class="radio-action-btn primary" onclick="UI_addStoryEntry('📻 Tin đồn: ${rumorText.replace(/'/g,'`').slice(0,40)}...','Radio');UI_closeRadio();UI_renderAll();showNotif('📍 Tin đồn đang theo dõi!','success')">📍 Theo dõi</button>
       <button class="radio-action-btn" onclick="UI_closeRadio()">Bỏ qua</button>
     </div>`;
+  UI_renderAll();
 }
 
 function UI_closeRadio(evt) {
@@ -5647,12 +5888,25 @@ function UI_updateRadioBtn() {
   }
 }
 
-// Tự động tạo radio rumour mỗi 3 ngày
+// Tự động tạo radio rumour mỗi 3 ngày + trigger rumor từ engine
 function UI_checkRadioTick(prevDay, newDay) {
-  if (newDay > prevDay && newDay % 3 === 0) {
-    _radioHasNew = true;
-    UI_updateRadioBtn();
-    showNotif('📻 Radio có tín hiệu mới!', 'info');
+  if (newDay > prevDay) {
+    // Every 3 days: trigger radio
+    if (newDay % 3 === 0) {
+      _radioHasNew = true;
+      UI_updateRadioBtn();
+      showNotif('📻 Radio có tín hiệu mới! Kiểm tra ngay.', 'info');
+    }
+    // Every 5 days: try generate rumor if none active
+    if (newDay % 5 === 0 && gs._state && !gs._state.activeRumor) {
+      if (typeof DW_generateRumor === 'function') {
+        const r = DW_generateRumor();
+        if (r && r.ok) {
+          showNotif(`📍 Tin đồn mới: ${(r.msg||'').slice(0,40)}...`, 'info');
+          UI_renderAll();
+        }
+      }
+    }
   }
 }
 
@@ -5760,6 +6014,18 @@ let _cbtState = null;
 //   xpAtOpen, xpEarned }
 
 function UI_openCombat(objIdx) {
+  // ── Route to DWArena pixel art combat ────────────
+  if (typeof DWArena !== 'undefined') {
+    const state = gs._state;
+    if (!state) return;
+    // DWArena.show() handles all enemies in current tile — objIdx is just a hint
+    // Optionally pre-select the specific enemy
+    DWArena.show(state, objIdx);
+    // After arena closes, re-render to reflect combat results
+    return;
+  }
+
+  // ── Fallback: old overlay combat ─────────────────
   const tile = DW_currentTile();
   const obj  = tile?.objects?.[objIdx];
   if (!obj) return;
