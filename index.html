@@ -2462,6 +2462,12 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
       <div class="ap-track"><div class="ap-fill" id="hb-ap" style="width:100%"></div></div>
       <div class="ap-regen-timer" id="ap-regen-timer"></div>
     </div>
+    <!-- STAMINA bar (⚔ SB — sức bền chiến đấu) -->
+    <div class="hstat-ap" style="min-width:80px;">
+      <div class="ap-label"><span style="color:#e05050;">⚔ SB</span><span id="hv-stm" style="color:#e05050;">10/10</span></div>
+      <div class="ap-track"><div class="ap-fill" id="hb-stm" style="width:100%;background:linear-gradient(90deg,#5a0a0a 0%,#c03030 55%,#e07070 100%);"></div></div>
+      <div class="ap-regen-timer" id="stm-regen-timer"></div>
+    </div>
     <!-- Location -->
     <div class="hstat-loc">
       <div class="loc-name" id="hv-loc">—</div>
@@ -2712,11 +2718,11 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   <!-- ══ ARENA ══ -->
   <div class="cbt-arena">
 
-    <!-- AP Budget -->
+    <!-- STAMINA Budget (thay AP — combat dùng SB không tốn ĐHĐ) -->
     <div class="cbt-ap-budget">
-      <span class="cbt-ap-budget-lbl">ĐHĐ CHIẾN ĐẤU</span>
+      <span class="cbt-ap-budget-lbl" style="color:#e05050;">⚔ SỨC BỀN</span>
       <div class="cbt-ap-dots" id="cbt-ap-dots"></div>
-      <span class="cbt-ap-budget-num" id="cbt-ap-budget-num">0</span>
+      <span class="cbt-ap-budget-num" id="cbt-ap-budget-num" style="color:#e05050;">0</span>
     </div>
 
     <!-- XP Bar -->
@@ -3249,9 +3255,11 @@ function UI_startApRegen() {
   if (apRegenInterval) clearInterval(apRegenInterval);
   apRegenInterval = setInterval(() => {
     if (!gs) return;
-    const gained = DW_apRegenTick(1000);
+    const gained    = DW_apRegenTick(1000);
+    const stmGained = (typeof DW_staminaRegenTick === 'function') ? DW_staminaRegenTick(1000) : 0;
     const p = gs.player;
-    // Header timer (giữ nguyên)
+
+    // Header AP timer
     const timerEl = document.getElementById('ap-regen-timer');
     if (timerEl) {
       if (p.ap >= p.maxAp) {
@@ -3264,6 +3272,22 @@ function UI_startApRegen() {
         timerEl.className = 'ap-regen-timer';
       }
     }
+
+    // Header STAMINA timer
+    const stmTimerEl = document.getElementById('stm-regen-timer');
+    if (stmTimerEl) {
+      const maxStm = p.maxStamina || 10;
+      const curStm = p.stamina ?? maxStm;
+      if (curStm >= maxStm) {
+        stmTimerEl.textContent = '● SB ĐẦY';
+        stmTimerEl.className = 'ap-regen-timer ready';
+      } else {
+        const secs = (typeof DW_getStaminaRegenSeconds === 'function') ? DW_getStaminaRegenSeconds() : 30;
+        stmTimerEl.textContent = `+1 SB sau ${secs}s`;
+        stmTimerEl.className = 'ap-regen-timer';
+      }
+    }
+
     // HUD timer (Fix 7)
     const hudTimer = document.getElementById('ap-regen-timer-hud');
     if (hudTimer) {
@@ -3277,11 +3301,13 @@ function UI_startApRegen() {
         hudTimer.style.color = '#2a2a2a';
       }
     }
-    if (gained) {
+
+    if (gained || stmGained) {
       UI_renderHeader();
       UI_renderSurvivalHUD();
       UI_renderContextActions();
-      if (p.ap === p.maxAp) showNotif('⚡ ĐHĐ đã đầy!', 'success');
+      if (gained && p.ap === p.maxAp) showNotif('⚡ ĐHĐ đã đầy!', 'success');
+      if (stmGained && (p.stamina ?? 0) >= (p.maxStamina || 10)) showNotif('⚔ Sức bền đã hồi đầy!', 'info');
     }
   }, 1000);
 }
@@ -4570,12 +4596,19 @@ function UI_renderContextActions() {
     }
   });
 
-  // Rest — show AP gain + limit
+  // Rest — show AP gain + limit + threat warning nếu có zombie
   const restLeft = Math.max(0, 2 - restCount);
-  const restLabel = restLeft > 0
-    ? `🛌 Nghỉ [+${restGain}ĐHĐ · còn ${restLeft}]`
-    : `🛌 Nghỉ [Đã đủ]`;
-  btns.push(`<button class="ctx-btn" onclick="UI_doRest()" ${(p.ap<1||hasEnemy||restLeft<=0)?'disabled':''}>${restLabel}</button>`);
+  let restLabel;
+  if (restLeft <= 0) {
+    restLabel = `🛌 Nghỉ [Đã đủ]`;
+  } else if (hasEnemy) {
+    const zombieCount = (tile.objects||[]).filter(o => o?.type==='enemy' && o.alive !== false).length;
+    restLabel = `😮‍💨 Nghỉ [⚠ ${zombieCount} zombie phản công! Hồi SB]`;
+  } else {
+    restLabel = `🛌 Nghỉ [+${restGain}ĐHĐ · SB đầy · còn ${restLeft}]`;
+  }
+  // hasEnemy: KHÔNG disable nữa — Threat Round cho phép nghỉ kể cả có zombie
+  btns.push(`<button class="ctx-btn ${hasEnemy ? 'ctx-danger' : ''}" onclick="UI_doRest()" ${(p.ap<1||restLeft<=0)?'disabled':''}>${restLabel}</button>`);
   btns.push(`<button class="ctx-btn" onclick="UI_doSleep()" ${hasEnemy?'disabled':''}>💤 Ngủ [Ngày mới]</button>`);
   btns.push(`<button class="ctx-btn" onclick="UI_doBarricade()" ${p.ap<2?'disabled':''}>🧱 Barricade [-2ĐHĐ]</button>`);
 
@@ -4612,6 +4645,15 @@ function UI_renderHeader() {
   // AP bar
   document.getElementById('hv-ap').textContent = p.ap+'/'+p.maxAp;
   document.getElementById('hb-ap').style.width = apPct+'%';
+
+  // STAMINA bar (⚔ SB)
+  const maxStm = p.maxStamina || (typeof DW_staminaMax === 'function' ? DW_staminaMax(p) : 10);
+  const curStm = p.stamina ?? maxStm;
+  const stmPct = (curStm / maxStm * 100).toFixed(1);
+  const stmEl  = document.getElementById('hv-stm');
+  const stmBar = document.getElementById('hb-stm');
+  if (stmEl) stmEl.textContent = curStm+'/'+maxStm;
+  if (stmBar) stmBar.style.width = stmPct+'%';
 
   // Hunger — value + bar fill
   const hunCls = p.hunger>5?'ok':p.hunger>2?'warn':'crit';
@@ -5640,15 +5682,29 @@ async function UI_doMove(dir) {
 async function UI_doRest() {
   const r = DW_rest();
   if (!r.ok) { showNotif(r.msg, 'danger'); return; }
-  // Second wind detection — show special popup
-  const isSecondWind = r.msg && r.msg.includes('Second Wind');
-  if (isSecondWind) {
-    showNotif('⚡ SECOND WIND! ' + r.msg, 'success');
-    // Flash the AP display
-    const apEl = document.getElementById('sr-ap-num');
-    if (apEl) { apEl.style.color='var(--amber)'; setTimeout(()=>apEl.style.color='',1500); }
+
+  if (r.hasEnemy) {
+    // Threat Round — zombie phản công
+    const dmg = r.totalDmg || 0;
+    const zc  = r.zombieCount || 0;
+    if (dmg > 0) {
+      showNotif(`💥 ${zc} zombie phản công — mất ${dmg} HP. SB hồi lại!`, 'danger');
+    } else {
+      showNotif('😮‍💨 Nghỉ — SB hồi. Zombie không trúng lần này.', 'warning');
+    }
+    if (gs?.player?.gameOver) {
+      showNotif('💀 GAME OVER — bị zombie hạ khi đang nghỉ!', 'danger');
+    }
   } else {
-    showNotif('🛌 ' + r.msg, 'success');
+    // Nghỉ an toàn
+    const isSecondWind = r.msg && r.msg.includes('Second Wind');
+    if (isSecondWind) {
+      showNotif('⚡ SECOND WIND! ' + r.msg, 'success');
+      const apEl = document.getElementById('sr-ap-num');
+      if (apEl) { apEl.style.color='var(--amber)'; setTimeout(()=>apEl.style.color='',1500); }
+    } else {
+      showNotif('🛌 ' + r.msg, 'success');
+    }
   }
   UI_renderAll();
 }
@@ -6035,7 +6091,9 @@ function UI_openCombat(objIdx) {
   const bossEntry = isBoss ? (gs.activeBosses||[])[obj.bossEntryIdx] : null;
   const bdef    = bossEntry ? BOSS_DEFS[bossEntry.bossId] : null;
   const maxCap  = isBoss ? 16 : 12;
-  const combatAp= Math.min(p.ap, maxCap);
+  // Dùng STAMINA thay AP cho combat — đây là pool chiến đấu ngắn hạn
+  const maxStm  = (typeof DW_staminaMax === 'function') ? DW_staminaMax(p) : (p.maxStamina || 10);
+  const combatAp= Math.min(p.stamina ?? maxStm, maxStm); // combatAp thực ra là stamina
   const eType   = isBoss ? 'normal' : _CBT_detectType(obj);
   const tDef    = _CBT_TYPES[eType] || _CBT_TYPES.normal;
 
@@ -6096,7 +6154,7 @@ function UI_openCombat(objIdx) {
   _cbt$('cbt-cost-stealth').textContent = '-3 ĐHĐ';
 
   // Reset log
-  _cbt$('cbt-log').innerHTML = `<div class="cbt-log-entry info">// Gặp ${eName}${eType!=='normal'?' ['+tDef.badge+']':''}! HP: ${eHpNow}. Còn ${combatAp} ĐHĐ.</div>`;
+  _cbt$('cbt-log').innerHTML = `<div class="cbt-log-entry info">// Gặp ${eName}${eType!=='normal'?' ['+tDef.badge+']':''}! HP: ${eHpNow}. SB: ${combatAp}/${combatAp}.</div>`;
 
   // Hide loot popup
   _cbt$('cbt-kill-popup').classList.remove('show');
@@ -6121,13 +6179,19 @@ function _CBT_showEnemyIntent() {
 
 function _CBT_updateUI() {
   if (!_cbtState) return;
-  const { combatAp, maxCombatAp, isBoss } = _cbtState;
+  // Đọc STAMINA live từ gs.player (thay vì _cbtState.combatAp lỗi thời)
+  const maxStm     = (typeof DW_staminaMax === 'function') ? DW_staminaMax(p) : (p.maxStamina || 10);
+  const combatAp   = p.stamina ?? maxStm;
+  const maxCombatAp = maxStm;
+  // Sync vào _cbtState để các check sau dùng đúng giá trị
+  if (_cbtState) { _cbtState.combatAp = combatAp; _cbtState.maxCombatAp = maxCombatAp; }
+  const { isBoss } = _cbtState;
   const p = gs.player;
 
-  // AP dots
+  // STAMINA dots (⚔ SB) — đỏ thay vì vàng
   let dots = '';
   for (let i = 0; i < maxCombatAp; i++)
-    dots += `<div class="cbt-ap-dot${i >= combatAp ? ' spent' : ''}"></div>`;
+    dots += `<div class="cbt-ap-dot${i >= combatAp ? ' spent' : ''}" style="${i < combatAp ? 'background:linear-gradient(135deg,#c03030,#e05050);' : ''}"></div>`;
   _cbt$('cbt-ap-dots').innerHTML = dots;
   _cbt$('cbt-ap-budget-num').textContent = `${combatAp}/${maxCombatAp}`;
 
@@ -6232,7 +6296,7 @@ function CBT_action(mode) {
   const cost  = costs[mode] || 2;
 
   if (_cbtState.combatAp < cost) {
-    _CBT_addLog('Không đủ ĐHĐ chiến đấu!', 'miss');
+    _CBT_addLog('Hết sức bền! Nhấn Nghỉ để hồi SB hoặc Thoát.', 'miss');
     return;
   }
 
