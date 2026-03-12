@@ -179,14 +179,33 @@ DW_getExits = function () {
     { id:'e', dx:1,  dy:0,  label:'Đông' },
     { id:'w', dx:-1, dy:0,  label:'Tây'  },
   ];
-  return dirs.filter(function (d) {
+  const ap = s.ap || 0;
+  return dirs.map(function (d) {
     const nx = s.x + d.dx;
     const ny = s.y + d.dy;
-    if (nx < 0 || ny < 0 || nx >= DW_WORLD_SIZE || ny >= DW_WORLD_SIZE) return false;
-    const tile = s.tiles ? s.tiles[nx + ',' + ny] : null;
-    if (!tile) return true;
-    return (MOVE_COST[tile.type] || 1) < 99;
-  });
+    const inBounds = nx >= 0 && ny >= 0 && nx < DW_WORLD_SIZE && ny < DW_WORLD_SIZE;
+    if (!inBounds) return null;
+    const tileKey = nx + ',' + ny;
+    const tile    = s.tiles ? (s.tiles[tileKey] || null) : null;
+    const tileType = tile ? tile.type : 'street';
+    const cost    = (typeof MOVE_COST !== 'undefined') ? (MOVE_COST[tileType] || 1) : 1;
+    const valid   = cost < 99;
+    if (!valid) return null;
+    return {
+      id:       d.id,
+      dx:       d.dx,
+      dy:       d.dy,
+      label:    d.label,
+      nx:       nx,
+      ny:       ny,
+      tile:     tile,
+      tileType: tileType,
+      cost:     cost,
+      canAfford: ap >= cost,
+      valid:    true,
+      inBounds: true,
+    };
+  }).filter(Boolean);
 };
 
 // ══════════════════════════════════════════════════════
@@ -492,15 +511,17 @@ DW_getMapViewport = function (cols, rows) {
   for (let row = 0; row < rows; row++) {
     const rowArr = [];
     for (let col = 0; col < cols; col++) {
-      const wx = s.x + (col - halfC);
-      const wy = s.y + (row - halfR);
+      const dx = col - halfC;   // offset from player: -1,0,+1
+      const dy = row - halfR;   // offset from player: -1,0,+1
+      const wx = s.x + dx;
+      const wy = s.y + dy;
       const inBounds = wx >= 0 && wy >= 0 && wx < DW_WORLD_SIZE && wy < DW_WORLD_SIZE;
       const key  = wx + ',' + wy;
       const tile = inBounds && s.tiles ? (s.tiles[key] || null) : null;
       const isPlayer   = wx === s.x && wy === s.y;
       const explored   = inBounds && (s.exploredTiles || []).includes(key);
       const hasBoss    = !!(s.activeBosses && s.activeBosses[key]);
-      rowArr.push({ x: wx, y: wy, tile, inBounds, explored, isPlayer, hasBoss });
+      rowArr.push({ x: wx, y: wy, wx, wy, dx, dy, tile, inBounds, explored, isPlayer, hasBoss });
     }
     result.push(rowArr);
   }
@@ -586,4 +607,9 @@ DW_resolveBaseEvent = function (choiceId) {
 };
 
 // ══════════════════════════════════════════════════════
+// ── Expose raw engine functions for DWArena ──────────
+// DWArena.js loads BEFORE shim, so needs these on window
+window.DW_fightRaw = (typeof DW_fight === 'function' && _raw.DW_fight) ? _raw.DW_fight : null;
+window.DW_fleeRaw  = (typeof DW_flee  === 'function' && _raw.DW_flee)  ? _raw.DW_flee  : null;
+
 console.log('[DW Shim v3] Loaded. gs API ready.');
