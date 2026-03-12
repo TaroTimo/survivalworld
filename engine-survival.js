@@ -114,8 +114,29 @@ function DW_rest(state) {
   const hasEnemy = (tile?.objects||[]).some(
     o => OBJECT_DEFS[o.type]?.type === 'enemy' && o.alive !== false
   );
-  if (hasEnemy)
-    return { state, msg: 'Không thể nghỉ — có kẻ thù trong khu vực!', ok: false };
+  const hasBoss = !!(state.activeBosses?.[tileKey]);
+
+  // Có zombie → Threat Round: tất cả zombie phản công 1 lần, player hồi STM
+  // Barricade KHÔNG miễn phí nghỉ — chỉ giảm damage (đã tính trong DW_threatRound).
+  if (hasEnemy || hasBoss) {
+    if (typeof DW_threatRound !== 'function') {
+      // Fallback nếu engine-combat chưa load (không nên xảy ra)
+      return { state, msg: 'Không thể nghỉ — có kẻ thù!', ok: false };
+    }
+    const tr = DW_threatRound(state);
+    // DW_threatRound đã: trừ HP, hồi STM 60%, reset threatPressure
+    // DW_rest thêm: tăng restCount (anti-grind), decay needs nhẹ
+    let s = { ...tr.state, restCount: restCount + 1 };
+    s = DW_needsDecay(s, 0.25);
+    return {
+      state: s,
+      msg: tr.msg,
+      ok: true,
+      hasEnemy: true,
+      totalDmg: tr.totalDmg,
+      zombieCount: tr.zombieCount,
+    };
+  }
 
   const maxAp = DW_apMax(state);
   let recover = Math.max(1, Math.floor(maxAp * 0.20));
@@ -141,9 +162,14 @@ function DW_rest(state) {
   }
 
   const newHour = (state.hour + 0.5) % 24;
+  // Nghỉ an toàn (không có zombie): hồi cả AP lẫn STAMINA
+  const maxStmRest = DW_staminaMax(state);
+  const stmRecover = Math.min(maxStmRest, (state.stamina ?? 0) + maxStmRest); // hồi đầy stamina khi nghỉ an toàn
   let s = {
     ...state,
     ap:             Math.min(maxAp, state.ap + recover),
+    stamina:        stmRecover,
+    maxStamina:     maxStmRest,
     hour:           newHour,
     restCount:      restCount + 1,
     secondWindUsed: secondWindActivated ? true : secondWindUsed,
@@ -169,7 +195,7 @@ function DW_rest(state) {
   ].filter(Boolean).join('');
 
   s.log = [
-    `😮‍💨 Nghỉ ngắn — hồi ${recover} ĐHĐ.${extras} (còn ${remaining} lần hôm nay)`,
+    `😮‍💨 Nghỉ ngắn — hồi ${recover} ĐHĐ + SB đầy.${extras} (còn ${remaining} lần hôm nay)`,
     ...(s.log||[]),
   ];
   return { state: s, msg: `Nghỉ ngắn: +${recover} ĐHĐ.`, ok: true };
