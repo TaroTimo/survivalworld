@@ -592,6 +592,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
 .tile-panel-inline{
   flex:1;overflow-y:auto;min-height:0;
   background:#060606;border-top:1px solid #111;
+  position:relative;z-index:3; /* thoát scanline ::before để nhận click */
 }
 .tile-panel-inline::-webkit-scrollbar{width:2px;}
 .tile-panel-inline::-webkit-scrollbar-thumb{background:#1e1e1e;}
@@ -5429,185 +5430,242 @@ function UI_renderLog() {
 // ── OBJECT POPUP ─────────────────────────────────────
 function UI_openObjectPopup(objIdx) {
   const tile = DW_currentTile();
-  const obj  = tile.objects[objIdx];
+  if (!tile) return;
+  const obj = tile.objects?.[objIdx];
   if (!obj) return;
 
   currentPopupObj = { obj, idx: objIdx };
 
-  // obj.type là KEY trong OBJECT_DEFS (ví dụ: 'firstaid_kit', 'zombie', 'shelf')
-  // def.type là CATEGORY ('usable','enemy','container','material','special','npc')
-  const _OD2   = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
-  const def    = _OD2[obj.type] || {};
-  const objCat = def.type || obj.type || 'container';
+  const _OD  = (typeof OBJECT_DEFS !== 'undefined') ? OBJECT_DEFS : {};
+  const _IDB = (typeof ITEM_DB     !== 'undefined') ? ITEM_DB     : {};
+  const def     = _OD[obj.type] || {};
+  const itemDef = _IDB[obj.type] || null;
+  const objCat  = def.type || obj.type || 'container';
 
-  document.getElementById('popup-icon').textContent  = obj.icon || def.icon || '📦';
-  document.getElementById('popup-title').textContent = obj.label || def.label || obj.type || '???';
+  document.getElementById('popup-icon').textContent  = obj.icon  || def.icon  || itemDef?.icon  || '\u{1F4E6}';
+  document.getElementById('popup-title').textContent = obj.label || def.label || itemDef?.name || obj.type || '???';
   document.getElementById('popup-result').textContent = '';
+  const oldExtra = document.getElementById('boss-hp-bar-extra');
+  if (oldExtra) oldExtra.remove();
 
   let meta = '', btns = '', extraHtml = '';
+  const p = gs.player || {};
+  const ap = p.ap || 0;
 
+  // ─── CONTAINER ──────────────────────────────────────
   if (objCat === 'container') {
-    const isSearched = obj.searched || obj.looted;
-    const apCost = def.searchAp || obj.searchAp || 2;
-    meta = isSearched ? 'Đã lục soát' : `Có thể lục soát · ${apCost} ĐHĐ`;
-    btns = `
-      <button class="popup-btn" onclick="UI_execSearch(${objIdx},false)" ${isSearched||gs.player.ap<apCost?'disabled':''}>
-        🔍 Lục soát nhanh <span class="pbcost">-${apCost} ĐHĐ</span>
-      </button>
-      <button class="popup-btn" onclick="UI_execSearch(${objIdx},true)" ${isSearched||gs.player.ap<apCost+1?'disabled':''}>
-        🔎 Lục soát kỹ <span class="pbcost">-${apCost+1} ĐHĐ</span>
-      </button>`;
+    const isDone  = obj.searched || obj.looted;
+    const apCost  = def.searchAp || obj.searchAp || 2;
+    const hints = {
+      shelf:   'Kl hang co the chua do an, thuoc hoac vat lieu.',
+      cabinet: 'Tu y te - kha nang cao tim thay bang gac, thuoc.',
+      locker:  'Tu khoa - do dung ca nhan, co the co vu khi nho.',
+      chest:   'Hom do - vat dung sinh ton quan trong.',
+      car:     'Xe bo lai - co the co xang, dung cu hoac do an.',
+      fridge:  'Tu lanh - thuc an hoac nuoc uong.',
+      desk:    'Ban lam viec - tai lieu, linh kien dien tu, chia khoa.',
+      crate:   'Thung hang - vat lieu xay dung hoac cong cu.',
+    };
+    const hintTxt = isDone
+      ? 'Da luc soat. Khong con gi ben trong.'
+      : (hints[obj.type] || 'Co the luc soat de tim do.');
+    const hintColor = isDone ? '#2a2a2a' : '#555';
 
+    meta = isDone ? '\u{1F513} Trong' : `\u{1F50D} Co the luc soat \u00B7 ${apCost} \u0110H\u0110`;
+    if (isDone) {
+      btns = `<div style="padding:10px 0;font-size:11px;color:#2a2a2a;font-family:var(--mono);text-align:center">-- TRONG --</div>`;
+    } else {
+      btns = `
+        <div style="padding:4px 0 14px;font-size:11px;color:${hintColor};line-height:1.6">${hintTxt}</div>
+        <div style="display:flex;gap:8px">
+          <button class="popup-btn" style="flex:1" onclick="UI_execSearch(${objIdx},false)" ${ap<apCost?'disabled':''}>
+            \u{1F50D} Luc soat nhanh <span class="pbcost">-${apCost} \u0110H\u0110</span>
+          </button>
+          <button class="popup-btn" style="flex:1" onclick="UI_execSearch(${objIdx},true)" ${ap<apCost+1?'disabled':''}>
+            \u{1F50E} Luc soat ky <span class="pbcost">-${apCost+1} \u0110H\u0110</span>
+          </button>
+        </div>`;
+    }
+
+  // ─── ENEMY SONG ─────────────────────────────────────
   } else if (objCat === 'enemy' && obj.alive !== false) {
-    const exits = DW_getExits();
+    const exits   = (typeof DW_getExits === 'function') ? DW_getExits() : [];
     const fleeDir = exits[0]?.id || 'n';
 
     if (obj.isBoss) {
-      // BOSS COMBAT
-      const bossEntry = (gs.activeBosses||[])[obj.bossEntryIdx];
-      const bdef = bossEntry ? BOSS_DEFS[bossEntry.bossId] : null;
-      const bHp  = bossEntry?.hp || obj.hp || 0;
-      const bMax = bdef?.maxHp || 1;
-      const hpPct = (bHp / bMax * 100).toFixed(0);
-      const phase  = bHp > bMax*0.6 ? 1 : bHp > bMax*0.25 ? 2 : 3;
-      const phaseColors = ['','var(--green)','var(--amber)','var(--blood-bright)'];
-
-      meta = `${bdef?.desc || 'Kẻ thù nguy hiểm'} · PHASE ${phase}`;
-
-      extraHtml = `
-        <div class="boss-hp-bar">
-          <div class="boss-hp-label">
-            <span style="color:var(--blood-bright);font-family:var(--mono)">${bdef?.icon||'☠'} ${bdef?.name} HP</span>
-            <span style="color:${phaseColors[phase]};font-family:var(--mono)">${bHp}/${bMax} · PHASE ${phase}</span>
-          </div>
-          <div class="boss-hp-track"><div class="boss-hp-fill" style="width:${hpPct}%"></div></div>
-          <div class="boss-phase" style="color:${phaseColors[phase]}">
-            ${phase===1?'🟢 Ổn định':phase===2?'🟡 Điên cuồng':'🔴 Tuyệt vọng - nguy hiểm nhất!'}
-          </div>
-        </div>`;
-
+      const bEntry = (gs.activeBosses || [])[obj.bossEntryIdx];
+      const bdef   = bEntry ? BOSS_DEFS[bEntry.bossId] : null;
+      const bHp    = bEntry?.hp || obj.hp || 0;
+      const bMax   = bdef?.maxHp || 1;
+      const pct    = (bHp / bMax * 100).toFixed(0);
+      const phase  = bHp > bMax * 0.6 ? 1 : bHp > bMax * 0.25 ? 2 : 3;
+      const pColors = ['', 'var(--green)', 'var(--amber)', 'var(--blood-bright)'];
+      meta = `${bdef?.desc || 'Ke thu nguy hiem'} \u00B7 PHASE ${phase}`;
+      extraHtml = `<div id="boss-hp-bar-extra" class="boss-hp-bar">
+        <div class="boss-hp-label">
+          <span style="color:var(--blood-bright);font-family:var(--mono)">${bdef?.icon||'\u2620'} ${bdef?.name} HP</span>
+          <span style="color:${pColors[phase]};font-family:var(--mono)">${bHp}/${bMax} \u00B7 PHASE ${phase}</span>
+        </div>
+        <div class="boss-hp-track"><div class="boss-hp-fill" style="width:${pct}%"></div></div>
+        <div class="boss-phase" style="color:${pColors[phase]}">
+          ${phase===1?'\u{1F7E2} On dinh':phase===2?'\u{1F7E1} Dien cuong':'\u{1F534} Tuyet vong - nguy hiem nhat!'}
+        </div>
+      </div>`;
       btns = `<div class="combat-grid">
-        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'normal')" ${gs.player.ap<(bdef?.fightAp||5)?'disabled':''}>
-          <span class="combat-opt-icon">⚔️</span>
-          <span class="combat-opt-name">Tấn Công</span>
-          <div class="combat-opt-desc">D20+combat vs DC${bdef?.dc||12}. Cân bằng.</div>
-          <div class="combat-opt-cost">-${bdef?.fightAp||5} ĐHĐ</div>
+        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'normal')" ${ap<(bdef?.fightAp||5)?'disabled':''}>
+          <span class="combat-opt-icon">\u2694\uFE0F</span><span class="combat-opt-name">Tan Cong</span>
+          <div class="combat-opt-desc">D20 vs DC${bdef?.dc||12}. Can bang.</div>
+          <div class="combat-opt-cost">-${bdef?.fightAp||5} \u0110H\u0110</div>
         </button>
-        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'heavy')" ${gs.player.ap<(bdef?.fightAp||5)+2?'disabled':''}>
-          <span class="combat-opt-icon">💪</span>
-          <span class="combat-opt-name">Đòn Mạnh</span>
-          <div class="combat-opt-desc">D20+2 bonus. Sát thương x2. Miss = nhận x1.5.</div>
-          <div class="combat-opt-cost">-${(bdef?.fightAp||5)+2} ĐHĐ</div>
+        <button class="combat-opt danger" onclick="UI_execBossFight(${obj.bossEntryIdx},'heavy')" ${ap<(bdef?.fightAp||5)+2?'disabled':''}>
+          <span class="combat-opt-icon">\u{1F4AA}</span><span class="combat-opt-name">Don Manh</span>
+          <div class="combat-opt-desc">+2 roll, x2 sat thuong.</div>
+          <div class="combat-opt-cost">-${(bdef?.fightAp||5)+2} \u0110H\u0110</div>
         </button>
-        <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${gs.player.ap<2?'disabled':''} style="margin:0">
-          🏃 Bỏ Chạy — Boss sẽ vẫn ở đây! <span class="pbcost">-${exits[0]?.cost||2} ĐHĐ</span>
-        </button>
-        <button class="combat-opt" onclick="UI_execItemFight(${objIdx})" ${!gs.player.inventory.some(i=>/molotov|lựu đạn|bình chữa cháy/i.test(i))?'disabled':''}>
-          <span class="combat-opt-icon">💥</span>
-          <span class="combat-opt-name">Dùng Đồ Ném</span>
-          <div class="combat-opt-desc">Dùng Molotov / lựu đạn. AoE.</div>
-          <div class="combat-opt-cost">-2 ĐHĐ</div>
+        <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${ap<2?'disabled':''} style="margin:0">
+          \u{1F3C3} Bo Chay <span class="pbcost">-${exits[0]?.cost||2} \u0110H\u0110</span>
         </button>
       </div>`;
     } else {
-      // NORMAL ENEMY — multi-option combat
-      meta = obj.isHorde ? `Bầy ${obj.count} con · Sát thương ${obj.damage}/hit` : `Sát thương ${obj.damage}/hit`;
-      const hasThrowable = gs.player.inventory.some(i => /molotov|lựu đạn|bình chữa cháy/i.test(i));
-      const hasStealth   = (gs.player.skills?.sneak||0) >= 2;
+      const fightAp  = obj.fightAp ?? def.fightAp ?? 3;
+      const dmg      = obj.damage  ?? def.damage  ?? def.fightAp ?? 1;
+      const armor    = obj.armor   ?? def.armor   ?? 0;
+      const hpCur    = obj.hp ?? def.hp ?? '?';
+      const hpMax    = obj.maxHp ?? def.hp ?? hpCur;
+      const poison   = def.poisonOnHit;
+      const hasStealth = (p.skills?.sneak || 0) >= 2;
+      const hasThrow   = (p.inventory || []).some(i => /molotov|luu dan|binh chua chay/i.test(i));
+
+      meta = `${obj.isHorde ? `Bay zombie \u00B7 ${dmg}dmg/luot` : `Zombie don le \u00B7 ${dmg}dmg/luot`} \u00B7 ${hpCur}/${hpMax} HP`
+           + (armor ? ` \u00B7 \u{1F6E1} ${armor} giap` : '')
+           + (poison ? ` \u00B7 \u2620 Doc` : '');
+
       btns = `<div class="combat-grid">
-        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'normal')" ${gs.player.ap<obj.fightAp?'disabled':''}>
-          <span class="combat-opt-icon">⚔️</span>
-          <span class="combat-opt-name">Tấn Công</span>
-          <div class="combat-opt-desc">D20+combat vs DC. Cân bằng rủi ro.</div>
-          <div class="combat-opt-cost">-${obj.fightAp} ĐHĐ</div>
+        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'normal')" ${ap<fightAp?'disabled':''}>
+          <span class="combat-opt-icon">\u2694\uFE0F</span><span class="combat-opt-name">Tan Cong</span>
+          <div class="combat-opt-desc">D20 vs DC. Can bang rui ro.</div>
+          <div class="combat-opt-cost">-${fightAp} \u0110H\u0110</div>
         </button>
-        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'heavy')" ${gs.player.ap<obj.fightAp+2?'disabled':''}>
-          <span class="combat-opt-icon">💪</span>
-          <span class="combat-opt-name">Đòn Mạnh</span>
-          <div class="combat-opt-desc">+2 roll, damage x2. Miss = nhận x1.5.</div>
-          <div class="combat-opt-cost">-${obj.fightAp+2} ĐHĐ</div>
+        <button class="combat-opt danger" onclick="UI_execFight(${objIdx},'heavy')" ${ap<fightAp+2?'disabled':''}>
+          <span class="combat-opt-icon">\u{1F4AA}</span><span class="combat-opt-name">Don Manh</span>
+          <div class="combat-opt-desc">+2 roll, x2 sat thuong. Miss = nhan x1.5.</div>
+          <div class="combat-opt-cost">-${fightAp+2} \u0110H\u0110</div>
         </button>
-        <button class="combat-opt" onclick="UI_execFight(${objIdx},'stealth')" ${(!hasStealth||gs.player.ap<obj.fightAp+1||obj.isHorde)?'disabled':''}>
-          <span class="combat-opt-icon">🗡️</span>
-          <span class="combat-opt-name">Ám Sát</span>
-          <div class="combat-opt-desc">${hasStealth?'Sneak ≥2 ✓ 1-hit kill nếu thành công.':'Cần Tàng hình ≥2'}</div>
-          <div class="combat-opt-cost">-${obj.fightAp+1} ĐHĐ</div>
+        <button class="combat-opt" onclick="UI_execFight(${objIdx},'stealth')" ${(!hasStealth||ap<fightAp+1||obj.isHorde)?'disabled':''}>
+          <span class="combat-opt-icon">\u{1F5E1}\uFE0F</span><span class="combat-opt-name">Am Sat</span>
+          <div class="combat-opt-desc">${hasStealth ? 'Sneak \u22652 \u2713 1-hit neu thanh cong.' : 'Can Tang hinh \u22652'}</div>
+          <div class="combat-opt-cost">-${fightAp+1} \u0110H\u0110</div>
         </button>
-        <button class="combat-opt" onclick="UI_execItemFight(${objIdx})" ${!hasThrowable||gs.player.ap<2?'disabled':''}>
-          <span class="combat-opt-icon">💥</span>
-          <span class="combat-opt-name">Ném Đồ</span>
-          <div class="combat-opt-desc">${hasThrowable?'Dùng Molotov/lựu đạn. AoE.':'Cần Molotov hoặc lựu đạn'}</div>
-          <div class="combat-opt-cost">-2 ĐHĐ</div>
+        <button class="combat-opt" onclick="UI_execItemFight(${objIdx})" ${!hasThrow||ap<2?'disabled':''}>
+          <span class="combat-opt-icon">\u{1F4A5}</span><span class="combat-opt-name">Nem Do</span>
+          <div class="combat-opt-desc">${hasThrow ? 'Dung Molotov/luu dan. AoE.' : 'Can Molotov/luu dan'}</div>
+          <div class="combat-opt-cost">-2 \u0110H\u0110</div>
         </button>
       </div>
-      <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${gs.player.ap<2?'disabled':''}>
-        🏃 Bỏ chạy (${exits[0]?.label||'?'}) <span class="pbcost">-${Math.max(1,(exits[0]?.cost||2)-1)} ĐHĐ</span>
+      <button class="popup-btn" onclick="UI_execFlee('${fleeDir}')" ${ap<2?'disabled':''}>
+        \u{1F3C3} Bo chay (${exits[0]?.label||'?'}) <span class="pbcost">-${Math.max(1,(exits[0]?.cost||2)-1)} \u0110H\u0110</span>
       </button>`;
     }
+
+  // ─── ENEMY CHET ─────────────────────────────────────
   } else if (objCat === 'enemy' && obj.alive === false) {
-    meta = 'Đã bị tiêu diệt';
-    btns = '<div style="padding:8px;font-family:var(--mono);font-size:9px;color:var(--dim)">Không còn đe dọa.</div>';
+    meta = '\u{1F480} Da bi tieu diet';
+    const alreadyLooted = obj.looted;
+    btns = alreadyLooted
+      ? `<div style="padding:8px;font-size:11px;color:#333;font-family:var(--mono)">Da luc xac roi.</div>`
+      : `<div style="padding:4px 0 12px;font-size:11px;color:#555;line-height:1.6">Xac zombie co the giu do dung hoac vat lieu.</div>
+         <button class="popup-btn" onclick="UI_execLootCorpse(${objIdx})" ${ap<1?'disabled':''}>
+           \u{1F480} Luc xac <span class="pbcost">-1 \u0110H\u0110</span>
+         </button>`;
+
+  // ─── NPC ────────────────────────────────────────────
   } else if (objCat === 'npc') {
-    meta = 'Người sống sót · có thể giao tiếp';
-    btns = `<button class="popup-btn" onclick="UI_execNPC(${objIdx})">💬 Nói chuyện <span class="pbcost">-1 ĐHĐ</span></button>`;
+    meta = '\u{1F464} Nguoi song sot';
+    btns = `<div style="padding:4px 0 12px;font-size:11px;color:#555;line-height:1.6">
+        Co the giao dich, trao doi thong tin hoac nhan nhiem vu.
+      </div>
+      <button class="popup-btn" onclick="UI_execNPC(${objIdx})">\u{1F4AC} Noi chuyen <span class="pbcost">-1 \u0110H\u0110</span></button>`;
+
+  // ─── SPECIAL (radio, map_item) ───────────────────────
   } else if (objCat === 'special') {
     const sCost = def.ap || obj.ap || 2;
-    meta = def.label ? `${def.label} · ${sCost} ĐHĐ` : 'Vật đặc biệt';
-    btns = `<button class="popup-btn" onclick="UI_execSpecial(${objIdx})" ${gs.player.ap<sCost?'disabled':''}>🔧 Sử dụng <span class="pbcost">-${sCost} ĐHĐ</span></button>`;
+    const descs = {
+      radio:    'Bo dam - lien lac tim nguoi song sot, co the nhan tin hieu quan trong.',
+      map_item: 'Ban do khu vuc - mo khoa thong tin dia diem xung quanh.',
+    };
+    meta = `${def.label || 'Dac biet'} \u00B7 ${sCost} \u0110H\u0110`;
+    btns = `<div style="padding:4px 0 12px;font-size:11px;color:#555;line-height:1.6">
+        ${descs[obj.type] || def.desc || 'Vat dac biet co the su dung.'}
+      </div>
+      <button class="popup-btn" onclick="UI_execSpecial(${objIdx})" ${ap<sCost?'disabled':''}>
+        \u{1F527} Su dung <span class="pbcost">-${sCost} \u0110H\u0110</span>
+      </button>`;
+
+  // ─── USABLE - item tren san ───────────────────────────
+  // Flow: icon lớn + tên + mô tả + [Lay] [Khong]
   } else if (objCat === 'usable') {
-    // Popup: thông tin vật phẩm + hỏi Lấy / Không
-    const uCost  = def.ap || obj.ap || 1;
-    const uLabel = def.label || obj.label || obj.type;
-    const uDesc  = def.desc  || 'Vật phẩm có thể sử dụng.';
-    meta = obj.used ? 'Đã nhặt' : `Vật phẩm trên sàn · ${uCost} ĐHĐ`;
-    if (obj.used) {
-      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
-    } else {
-      btns = `
-        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${uDesc}</div>
-        <div style="display:flex;gap:8px">
-          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
-            onclick="UI_execPickupItem(${objIdx},'usable')" ${gs.player.ap<uCost?'disabled':''}>
-            ✅ Lấy <span class="pbcost">-${uCost} ĐHĐ</span>
-          </button>
-          <button class="popup-btn" style="flex:1;opacity:.5"
-            onclick="document.getElementById('popup-overlay').classList.remove('show')">
-            ❌ Không
-          </button>
-        </div>`;
-    }
+    const uCost = def.ap || obj.ap || 1;
+    const uDesc = itemDef?.desc || def.desc || 'Vat pham co the su dung.';
+    const eff   = itemDef?.useEffect || def.useEffect || {};
+    const tags  = [];
+    if (eff.hp)           tags.push(`+${eff.hp} HP`);
+    if (eff.hunger)       tags.push(`+${eff.hunger} Do`);
+    if (eff.thirst)       tags.push(`+${eff.thirst} Khat`);
+    if (eff.stress)       tags.push(`${eff.stress > 0 ? '+' : ''}${eff.stress} Stress`);
+    if (eff.removesStatus) tags.push(`Xoa: ${eff.removesStatus}`);
+    const tagHtml = tags.length
+      ? `<div style="margin-top:6px;font-size:10px;color:var(--green)">${tags.join(' \u00B7 ')}</div>`
+      : '';
+
+    meta = obj.used ? '\u2713 Da nhat' : `Vat pham tren san \u00B7 ${uCost} \u0110H\u0110`;
+    btns = obj.used
+      ? `<div style="padding:8px;color:var(--dim);font-size:11px">Da nhat roi.</div>`
+      : `<div style="padding:4px 0 14px">
+           <div style="font-size:11px;color:#666;line-height:1.6">${uDesc}</div>
+           ${tagHtml}
+         </div>
+         <div style="display:flex;gap:8px">
+           <button class="popup-btn" style="flex:2;background:rgba(0,120,60,.15);border-color:#0a4"
+             onclick="UI_execPickupItem(${objIdx},'usable')" ${ap<uCost?'disabled':''}>
+             \u2705 Lay <span class="pbcost">-${uCost} \u0110H\u0110</span>
+           </button>
+           <button class="popup-btn" style="flex:1;opacity:.5"
+             onclick="document.getElementById('popup-overlay').classList.remove('show')">
+             \u274C Khong
+           </button>
+         </div>`;
+
+  // ─── MATERIAL - vat lieu tren san ────────────────────
   } else if (objCat === 'material') {
-    // Popup: thông tin vật liệu + hỏi Lấy / Không
-    const mCost  = def.ap || obj.ap || 1;
-    const mLabel = def.label || obj.label || obj.type;
-    const mDesc  = def.desc  || 'Vật liệu. Dùng để craft hoặc xây barricade.';
-    meta = obj.used ? 'Đã nhặt' : `Vật liệu trên sàn · ${mCost} ĐHĐ`;
-    if (obj.used) {
-      btns = '<div style="padding:8px;color:var(--dim);font-size:11px">Đã nhặt rồi.</div>';
-    } else {
-      btns = `
-        <div style="padding:4px 0 10px;font-size:11px;color:#888;line-height:1.5">${mDesc}</div>
-        <div style="display:flex;gap:8px">
-          <button class="popup-btn" style="flex:1;background:rgba(0,120,60,.15);border-color:#0a4"
-            onclick="UI_execPickupItem(${objIdx},'material')" ${gs.player.ap<mCost?'disabled':''}>
-            ✅ Lấy <span class="pbcost">-${mCost} ĐHĐ</span>
-          </button>
-          <button class="popup-btn" style="flex:1;opacity:.5"
-            onclick="document.getElementById('popup-overlay').classList.remove('show')">
-            ❌ Không
-          </button>
-        </div>`;
-    }
+    const mCost = def.ap || obj.ap || 1;
+    const mDesc = itemDef?.desc || def.desc || 'Vat lieu - dung de craft hoac xay barricade.';
+    meta = obj.used ? '\u2713 Da nhat' : `Vat lieu tren san \u00B7 ${mCost} \u0110H\u0110`;
+    btns = obj.used
+      ? `<div style="padding:8px;color:var(--dim);font-size:11px">Da nhat roi.</div>`
+      : `<div style="padding:4px 0 14px">
+           <div style="font-size:11px;color:#666;line-height:1.6">${mDesc}</div>
+         </div>
+         <div style="display:flex;gap:8px">
+           <button class="popup-btn" style="flex:2;background:rgba(0,120,60,.15);border-color:#0a4"
+             onclick="UI_execPickupItem(${objIdx},'material')" ${ap<mCost?'disabled':''}>
+             \u2705 Lay <span class="pbcost">-${mCost} \u0110H\u0110</span>
+           </button>
+           <button class="popup-btn" style="flex:1;opacity:.5"
+             onclick="document.getElementById('popup-overlay').classList.remove('show')">
+             \u274C Khong
+           </button>
+         </div>`;
+
+  } else {
+    meta = def.label || obj.type || 'Vat the khong xac dinh';
+    btns = `<div style="padding:8px;font-size:11px;color:#333">Khong co hanh dong kha dung.</div>`;
   }
 
-  document.getElementById('popup-meta').textContent = meta;
+  document.getElementById('popup-meta').textContent  = meta;
   document.getElementById('popup-actions').innerHTML = btns;
-
-  // Insert boss HP bar before actions if boss
   if (extraHtml) {
     document.getElementById('popup-actions').insertAdjacentHTML('beforebegin', extraHtml);
   }
-
   document.getElementById('popup-overlay').classList.add('show');
 }
 
@@ -5841,6 +5899,71 @@ function UI_execSpecial(idx) {
 
 // UI_execPickupItem: nhặt vật phẩm/vật liệu trên sàn vào túi đồ
 // Dùng cho cả 'usable' và 'material' category
+// UI_execLootCorpse: luc xac zombie da chet - ton 1 AP
+function UI_execLootCorpse(idx) {
+  const tile = DW_currentTile();
+  const obj  = tile?.objects?.[idx];
+  if (!obj) { showNotif('Khong tim thay xac.', 'danger'); return; }
+
+  const s = gs._state;
+  if (!s) return;
+  if (obj.looted) { showNotif('Da luc xac roi.', 'danger'); return; }
+  if (s.ap < 1)   { showNotif('Can 1 DHD de luc xac.', 'danger'); return; }
+
+  const _IDB  = (typeof ITEM_DB    !== 'undefined') ? ITEM_DB    : {};
+  const _EL   = (typeof ENEMY_LOOT !== 'undefined') ? ENEMY_LOOT : {};
+  const lootDef = _EL[obj.type] || _EL['zombie'] || null;
+  const tileKey = `${s.x},${s.y}`;
+
+  // Danh dau da luc
+  const newObjs = s.tiles[tileKey].objects.map((o, i) =>
+    i === idx ? { ...o, looted: true } : o
+  );
+
+  // Roll loot
+  const drops = [];
+  if (lootDef) {
+    const [minD, maxD] = lootDef.dropCount || [0, 1];
+    let rngFn;
+    if (typeof mulberry32 !== 'undefined' && typeof hashCoord !== 'undefined') {
+      rngFn = mulberry32(hashCoord(s.gameId, s.x * 997 + idx * 31, s.y * 991 + idx * 17));
+    } else {
+      let seed = Date.now(); rngFn = () => { seed = (seed * 1664525 + 1013904223) & 0xFFFFFFFF; return (seed >>> 0) / 0xFFFFFFFF; };
+    }
+    const numDrop = minD + Math.floor(rngFn() * (maxD - minD + 1));
+    const table   = lootDef.table || [];
+    const totalW  = table.reduce((a, b) => a + b.w, 0);
+    for (let i = 0; i < numDrop && table.length; i++) {
+      let r = rngFn() * totalW, picked = table[table.length - 1];
+      for (const entry of table) { r -= entry.w; if (r <= 0) { picked = entry; break; } }
+      drops.push(picked.id);
+    }
+  }
+
+  let ns = {
+    ...s,
+    ap:         Math.max(0, s.ap - 1),
+    inventory:  [...(s.inventory  || []), ...drops],
+    itemRarity: [...(s.itemRarity || []), ...drops.map(() => 'common')],
+    tiles: { ...s.tiles, [tileKey]: { ...s.tiles[tileKey], objects: newObjs } },
+  };
+  const dropNames = drops.map(d => _IDB[d]?.name || d).join(', ');
+  const logMsg = drops.length
+    ? `\u{1F480} Luc xac - tim thay: ${dropNames}.`
+    : '\u{1F480} Luc xac - khong co gi.';
+  ns.log = [logMsg, ...(ns.log || [])];
+
+  gs.setState(ns);
+
+  // Hien ket qua trong popup
+  const resEl = document.getElementById('popup-result');
+  if (resEl) resEl.innerHTML = drops.length
+    ? `<span style="color:var(--green)">\u2705 Tim duoc: ${dropNames}</span>`
+    : '<span style="color:var(--dim)">Khong co gi.</span>';
+  document.getElementById('popup-actions').innerHTML = '';
+  UI_renderAll();
+}
+
 function UI_execPickupItem(idx, _cat) {
   const tile = DW_currentTile();
   const obj  = tile?.objects?.[idx];
