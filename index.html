@@ -427,7 +427,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   display:flex;flex-direction:column;
   border-right:1px solid #1c1c1c;
   background:#070707;
-  position:relative;overflow:hidden;
+  position:relative;overflow:clip; /* clip visual but not pointer events */
 }
 
 /* scanline texture */
@@ -592,7 +592,7 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
 .tile-panel-inline{
   flex:1;overflow-y:auto;min-height:0;
   background:#060606;border-top:1px solid #111;
-  position:relative;z-index:3; /* thoát scanline ::before để nhận click */
+  position:relative;z-index:3;max-height:180px;overflow-y:auto;
 }
 .tile-panel-inline::-webkit-scrollbar{width:2px;}
 .tile-panel-inline::-webkit-scrollbar-thumb{background:#1e1e1e;}
@@ -608,6 +608,8 @@ html,body{height:100%;overflow:hidden;background:#0a0a0a;color:#CEC9C0;font-fami
   background:#060606;
 }
 .tile-panel-inline .obj-card:hover{background:#0c0c0c;}
+.tile-panel-inline button.obj-card{appearance:none;-webkit-appearance:none;outline:none;}
+.tile-panel-inline button.obj-card:focus{outline:1px solid #333;}
 .tile-panel-inline .obj-card.enemy-alive{
   border-left:2px solid var(--blood);
   background:rgba(192,57,43,.04);
@@ -4857,14 +4859,17 @@ function UI_renderTilePanel() {
     }
 
     const enemyCls = isEnemy && obj.alive !== false ? ' enemy-alive' : '';
-    html += `<div class="obj-card${enemyCls}" ${click?`onclick="${click}"`:'style="cursor:default"'}>
+    // v3.2: dùng <button> thay vì div onclick để đảm bảo click luôn hoạt động
+    const clickAttr = click ? `onclick="${click}"` : 'disabled style="cursor:default;opacity:.4"';
+    html += `<button class="obj-card${enemyCls}" ${clickAttr} type="button"
+      style="width:100%;text-align:left;background:none;border:none;padding:7px 10px;cursor:${click?'pointer':'default'};display:flex;align-items:center;gap:8px;border-bottom:1px solid #0d0d0d;">
       <div class="obj-icon">${icon}</div>
-      <div class="obj-info">
-        <div class="obj-name">${label}</div>
-        <div class="obj-meta">${meta}</div>
+      <div class="obj-info" style="flex:1;min-width:0">
+        <div class="obj-name" style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:12px;color:#999">${label}</div>
+        <div class="obj-meta" style="font-family:var(--mono);font-size:8px;color:#333">${meta}</div>
       </div>
       ${badge}
-    </div>`;
+    </button>`;
   });
 
   panel.innerHTML = html || `<div class="tpi-empty">// Không có gì đặc biệt //</div>`;
